@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/app_flavor.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/remote_config/data/remote_config_repository.dart';
 import 'features/settings/presentation/providers/settings_provider.dart';
 
 void main() async {
@@ -13,6 +14,12 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // Preload guard script for instantaneous zero-latency WebView bootstrap
+  try {
+    HttpRouteConfigRepository.preloadedGuardJs =
+        await rootBundle.loadString('assets/js/guard.js');
+  } catch (_) {}
 
   runApp(
     ProviderScope(

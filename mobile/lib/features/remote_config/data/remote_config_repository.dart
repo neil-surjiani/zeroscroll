@@ -39,6 +39,9 @@ abstract class RouteConfigRepository {
 /// 3. Bundled Default (assets/default_config.json).
 /// 4. In-Memory Safe Fallback (never crash).
 class HttpRouteConfigRepository implements RouteConfigRepository {
+  /// Preloaded guard script string populated during app bootstrap for instantaneous startup.
+  static String? preloadedGuardJs;
+
   HttpRouteConfigRepository({
     http.Client? httpClient,
     SharedPreferences? sharedPreferences,
@@ -305,6 +308,10 @@ class HttpRouteConfigRepository implements RouteConfigRepository {
   @override
   Future<String> getGuardJs() async {
     if (_cachedGuardJs != null) {
+      return _cachedGuardJs!;
+    }
+    if (preloadedGuardJs != null && preloadedGuardJs!.isNotEmpty) {
+      _cachedGuardJs = preloadedGuardJs;
       return _cachedGuardJs!;
     }
     try {

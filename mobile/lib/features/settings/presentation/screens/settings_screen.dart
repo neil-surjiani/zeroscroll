@@ -7,6 +7,7 @@ import '../../../../core/config/app_flavor.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../limits/presentation/screens/limits_screen.dart';
 import '../../../limits/presentation/screens/stats_screen.dart';
+import '../../../limits/presentation/widgets/deactivate_app_dialog.dart';
 import '../../../security/data/security_repository.dart';
 import '../../../security/presentation/providers/security_provider.dart';
 import '../../../security/presentation/screens/debug_screen.dart';
@@ -47,9 +48,130 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final isDeveloperUnlocked = ref.watch(developerModeUnlockedProvider);
     final theme = Theme.of(context);
 
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+        // Instagram-style Profile/Account Header Card
+        Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant,
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Logo in Instagram-style story gradient ring
+              Container(
+                width: 60,
+                height: 60,
+                padding: const EdgeInsets.all(2.5),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: SweepGradient(
+                    colors: [
+                      theme.colorScheme.primary,
+                      const Color(0xFF6AAA9E),
+                      theme.colorScheme.primaryContainer,
+                      theme.colorScheme.primary,
+                    ],
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    shape: BoxShape.circle,
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/logo.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.verified_user_rounded,
+                        size: 32,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'ZeroScroll',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.verified_rounded,
+                          size: 16,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Mindful Instagram Client',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Active Session • 100% Private',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // 1. ACCOUNT SECTION
         _SectionHeader(title: 'Account', icon: Icons.person_outline_rounded),
         Card(
@@ -131,6 +253,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     MaterialPageRoute(builder: (_) => const StatsScreen()),
                   );
                 },
+              ),
+              const Divider(),
+              ListTile(
+                key: const ValueKey('settings_deactivate_app_tile'),
+                leading: const Icon(Icons.lock_clock_rounded),
+                title: const Text('Deactivate App (Hard Lock)'),
+                subtitle: const Text('Lock ZeroScroll for hours or days with zero bypass'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => DeactivateAppDialog.show(context),
               ),
             ],
           ),
@@ -678,7 +809,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
 
         const SizedBox(height: 32),
-      ],
+        ],
+      ),
     );
   }
 

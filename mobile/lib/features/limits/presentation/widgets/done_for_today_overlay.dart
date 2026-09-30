@@ -17,10 +17,8 @@ class DoneForTodayOverlay extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    final bgColor = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
-    final cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final bgColor = theme.scaffoldBackgroundColor;
+    final cardColor = theme.colorScheme.surface;
 
     return PopScope(
       canPop: false,

@@ -15,6 +15,7 @@ class LimitsConfig {
     this.isReplyFrictionEnabled = false,
     this.reelsAvoidedCount = 0,
     this.focusSchedules = const [],
+    this.deactivatedUntil,
   });
 
   /// Configured daily app limit in minutes (default 30).
@@ -22,6 +23,10 @@ class LimitsConfig {
 
   /// Whether the daily app time limit is actively enforced (default off).
   final bool isDailyTimeLimitEnabled;
+
+  /// When non-null and in the future, the app is strictly deactivated/hard-locked.
+  /// No emergency unlocks, extensions, or ignores are permitted until this timestamp.
+  final DateTime? deactivatedUntil;
 
   /// Daily reel consumption budget (default 3, range 0–20).
   final int dailyReelBudget;
@@ -87,6 +92,20 @@ class LimitsConfig {
     return null;
   }
 
+  /// Whether the app is currently in a strict deactivation/lockdown state.
+  bool isDeactivated([DateTime? now]) {
+    if (deactivatedUntil == null) return false;
+    final current = now ?? DateTime.now();
+    return deactivatedUntil!.isAfter(current);
+  }
+
+  /// Remaining duration of the active deactivation period, or null if not deactivated.
+  Duration? getRemainingDeactivation([DateTime? now]) {
+    if (!isDeactivated(now)) return null;
+    final current = now ?? DateTime.now();
+    return deactivatedUntil!.difference(current);
+  }
+
   Map<String, dynamic> toJson() => {
         'dailyTimeLimitMinutes': dailyTimeLimitMinutes,
         'isDailyTimeLimitEnabled': isDailyTimeLimitEnabled,
@@ -98,6 +117,7 @@ class LimitsConfig {
         'isReplyFrictionEnabled': isReplyFrictionEnabled,
         'reelsAvoidedCount': reelsAvoidedCount,
         'focusSchedules': focusSchedules.map((s) => s.toJson()).toList(),
+        'deactivatedUntil': deactivatedUntil?.toIso8601String(),
       };
 
   factory LimitsConfig.fromJson(Map<String, dynamic> json) {
@@ -115,6 +135,9 @@ class LimitsConfig {
               ?.map((e) => FocusSchedule.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      deactivatedUntil: json['deactivatedUntil'] != null
+          ? DateTime.tryParse(json['deactivatedUntil'] as String)
+          : null,
     );
   }
 
@@ -129,6 +152,8 @@ class LimitsConfig {
     bool? isReplyFrictionEnabled,
     int? reelsAvoidedCount,
     List<FocusSchedule>? focusSchedules,
+    DateTime? deactivatedUntil,
+    bool clearDeactivatedUntil = false,
   }) {
     return LimitsConfig(
       dailyTimeLimitMinutes: dailyTimeLimitMinutes ?? this.dailyTimeLimitMinutes,
@@ -145,6 +170,9 @@ class LimitsConfig {
           isReplyFrictionEnabled ?? this.isReplyFrictionEnabled,
       reelsAvoidedCount: reelsAvoidedCount ?? this.reelsAvoidedCount,
       focusSchedules: focusSchedules ?? this.focusSchedules,
+      deactivatedUntil: clearDeactivatedUntil
+          ? null
+          : (deactivatedUntil ?? this.deactivatedUntil),
     );
   }
 }

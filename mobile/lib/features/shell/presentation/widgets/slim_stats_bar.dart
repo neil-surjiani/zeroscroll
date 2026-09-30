@@ -15,13 +15,8 @@ class SlimStatsBar extends ConsumerWidget {
     final reelCount = ref.watch(todayReelCountProvider);
     final theme = Theme.of(context);
 
-    final borderColor = theme.brightness == Brightness.dark
-        ? const Color(0xFF283548)
-        : const Color(0xFFE2E8F0);
-
-    final backgroundColor = theme.brightness == Brightness.dark
-        ? const Color(0xFF131B26)
-        : const Color(0xFFFFFFFF);
+    final borderColor = theme.colorScheme.outlineVariant;
+    final backgroundColor = theme.colorScheme.surface;
 
     return AnimatedCrossFade(
       duration: const Duration(milliseconds: 250),
@@ -34,7 +29,7 @@ class SlimStatsBar extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: backgroundColor,
-          border: Border(bottom: BorderSide(color: borderColor, width: 1)),
+          border: Border(bottom: BorderSide(color: borderColor, width: 0.5)),
         ),
         child: Row(
           children: [
@@ -119,7 +114,7 @@ class SlimStatsBar extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: backgroundColor,
-            border: Border(bottom: BorderSide(color: borderColor, width: 1)),
+            border: Border(bottom: BorderSide(color: borderColor, width: 0.5)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

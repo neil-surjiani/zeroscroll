@@ -6,6 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../limits/domain/limits_status.dart';
 import '../../../limits/presentation/providers/app_lifecycle_tracker.dart';
 import '../../../limits/presentation/providers/limits_state_provider.dart';
+import '../../../limits/presentation/widgets/deactivated_overlay.dart';
 import '../../../limits/presentation/widgets/done_for_today_overlay.dart';
 import '../../../limits/presentation/widgets/focus_locked_overlay.dart';
 import '../../../notifications/presentation/screens/notifications_screen.dart';
@@ -105,8 +106,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
     }
 
-    // 1. Check if an active focus schedule or daily limit locks the app
+    // 1. Check if an active focus schedule, daily limit, or hard deactivation locks the app
     final limitsStatus = ref.watch(activeLimitsStatusProvider);
+    if (limitsStatus is DeactivatedStatus) {
+      return DeactivatedOverlay(deactivatedUntil: limitsStatus.deactivatedUntil);
+    }
     if (limitsStatus is FocusLockedStatus) {
       return FocusLockedOverlay(schedule: limitsStatus.schedule);
     }
@@ -143,44 +147,81 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       appBar: isViewerActive
           ? null
           : AppBar(
+              titleSpacing: 16,
               title: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.asset(
+                      'assets/logo.png',
+                      width: 28,
+                      height: 28,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   const Text(
                     'ZeroScroll',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 22,
+                      letterSpacing: -0.8,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: 6,
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
                       color: flavor.isSideload
                           ? Colors.amber.shade800.withValues(alpha: 0.15)
                           : theme.colorScheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: flavor.isSideload
                             ? Colors.amber.shade800.withValues(alpha: 0.4)
                             : theme.colorScheme.primary.withValues(alpha: 0.3),
+                        width: 0.5,
                       ),
                     ),
                     child: Text(
                       flavor.flavor.name.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.5,
                         color: flavor.isSideload
                             ? (theme.brightness == Brightness.dark
-                                  ? Colors.amber.shade300
-                                  : Colors.amber.shade900)
+                                ? Colors.amber.shade300
+                                : Colors.amber.shade900)
                             : theme.colorScheme.primary,
                       ),
                     ),
                   ),
                 ],
+              ),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(0.5),
+                child: Container(
+                  color: theme.colorScheme.outlineVariant,
+                  height: 0.5,
+                ),
               ),
               actions: [
                 if (safeTab == ShellTab.messages)
@@ -222,61 +263,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
       bottomNavigationBar: isViewerActive
           ? null
-          : NavigationBar(
-              selectedIndex: selectedIndex,
-              onDestinationSelected: (index) {
-                ref
-                    .read(activeShellTabProvider.notifier)
-                    .selectTab(availableTabs[index]);
-              },
-              destinations: [
-                // Tab 0: Messages with unread badge (no red badges except unread counts)
-                NavigationDestination(
-                  icon: unreadCount > 0
-                      ? Badge.count(
-                          count: unreadCount,
-                          backgroundColor: AppTheme.unreadBadgeColor,
-                          child: const Icon(Icons.chat_bubble_outline_rounded),
-                        )
-                      : const Icon(Icons.chat_bubble_outline_rounded),
-                  selectedIcon: unreadCount > 0
-                      ? Badge.count(
-                          count: unreadCount,
-                          backgroundColor: AppTheme.unreadBadgeColor,
-                          child: const Icon(Icons.chat_bubble_rounded),
-                        )
-                      : const Icon(Icons.chat_bubble_rounded),
-                  label: 'Messages',
-                  tooltip: unreadCount > 0
-                      ? 'Direct Messages ($unreadCount unread)'
-                      : 'Direct Messages',
+          : Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: theme.colorScheme.outlineVariant,
+                    width: 0.5,
+                  ),
                 ),
-
-                // Tab 1: Notifications & Activity
-                const NavigationDestination(
-                  icon: Icon(Icons.notifications_none_rounded),
-                  selectedIcon: Icon(Icons.notifications_rounded),
-                  label: 'Activity',
-                  tooltip: 'Activity and Notifications',
-                ),
-
-                // Dynamic 4th tab: Stories (only when fromFollowing mode is enabled)
-                if (showStoriesTab)
-                  const NavigationDestination(
-                    icon: Icon(Icons.amp_stories_outlined),
-                    selectedIcon: Icon(Icons.amp_stories_rounded),
-                    label: 'Stories',
-                    tooltip: 'Stories from Following',
+              ),
+              child: NavigationBar(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: (index) {
+                  ref
+                      .read(activeShellTabProvider.notifier)
+                      .selectTab(availableTabs[index]);
+                },
+                destinations: [
+                  // Tab 0: Messages with unread badge (no red badges except unread counts)
+                  NavigationDestination(
+                    icon: unreadCount > 0
+                        ? Badge.count(
+                            count: unreadCount,
+                            backgroundColor: AppTheme.unreadBadgeColor,
+                            child: const Icon(Icons.chat_bubble_outline_rounded),
+                          )
+                        : const Icon(Icons.chat_bubble_outline_rounded),
+                    selectedIcon: unreadCount > 0
+                        ? Badge.count(
+                            count: unreadCount,
+                            backgroundColor: AppTheme.unreadBadgeColor,
+                            child: const Icon(Icons.chat_bubble_rounded),
+                          )
+                        : const Icon(Icons.chat_bubble_rounded),
+                    label: 'Messages',
+                    tooltip: unreadCount > 0
+                        ? 'Direct Messages ($unreadCount unread)'
+                        : 'Direct Messages',
                   ),
 
-                // Tab: Settings
-                const NavigationDestination(
-                  icon: Icon(Icons.tune_rounded),
-                  selectedIcon: Icon(Icons.tune_rounded),
-                  label: 'Settings',
-                  tooltip: 'Settings and Limits',
-                ),
-              ],
+                  // Tab 1: Notifications & Activity
+                  const NavigationDestination(
+                    icon: Icon(Icons.notifications_none_rounded),
+                    selectedIcon: Icon(Icons.notifications_rounded),
+                    label: 'Activity',
+                    tooltip: 'Activity and Notifications',
+                  ),
+
+                  // Dynamic 4th tab: Stories (only when fromFollowing mode is enabled)
+                  if (showStoriesTab)
+                    const NavigationDestination(
+                      icon: Icon(Icons.amp_stories_outlined),
+                      selectedIcon: Icon(Icons.amp_stories_rounded),
+                      label: 'Stories',
+                      tooltip: 'Stories from Following',
+                    ),
+
+                  // Tab: Settings
+                  const NavigationDestination(
+                    icon: Icon(Icons.tune_rounded),
+                    selectedIcon: Icon(Icons.tune_rounded),
+                    label: 'Settings',
+                    tooltip: 'Settings and Limits',
+                  ),
+                ],
+              ),
             ),
     );
   }

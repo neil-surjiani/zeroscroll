@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -94,6 +95,11 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
         message: config.killSwitch.message,
         onRetry: () => ref.read(routeConfigRepositoryProvider).refreshConfig(),
       );
+    }
+
+    // Desktop/Unsupported platform notice: Inform developer to use Android device/emulator
+    if (_isDesktopWithoutWebView()) {
+      return const _DesktopEnvironmentNotice();
     }
 
     // Fail-Closed: If guard JS failed to load from assets, disable WebView
@@ -465,10 +471,33 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               // Fail-closed verification: ensure the guard script initialized on the loaded page
               if (url != null && !url.toString().contains('about:blank')) {
                 try {
-                  final guardInit = await controller.evaluateJavascript(
+                  var guardInit = await controller.evaluateJavascript(
                     source:
                         'Boolean(window.__ZEROSCROLL_GUARD_INITIALIZED__ === true);',
                   );
+                  if (guardInit == false || guardInit == 0 || guardInit == 'false') {
+                    // Attempt fallback injection if document start was delayed or missed
+                    final scriptToInject = guardJs.isNotEmpty
+                        ? guardJs
+                        : (await ref.read(guardJsProvider.future));
+                    if (scriptToInject.isNotEmpty) {
+                      await controller.evaluateJavascript(
+                        source: '''
+                          (function() {
+                            if (!window.__ZEROSCROLL_GUARD_INITIALIZED__) {
+                              window.__ZEROSCROLL_CONFIG__ = Object.freeze(${config.toJsonString()});
+                              $scriptToInject
+                            }
+                          })();
+                        ''',
+                      );
+                      guardInit = await controller.evaluateJavascript(
+                        source:
+                            'Boolean(window.__ZEROSCROLL_GUARD_INITIALIZED__ === true);',
+                      );
+                    }
+                  }
+
                   if (guardInit == false || guardInit == 0 || guardInit == 'false') {
                     await controller.stopLoading();
                     await controller.loadUrl(
@@ -1062,6 +1091,16 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
     }
   }
 
+  bool _isDesktopWithoutWebView() {
+    if (kIsWeb) return true;
+    final platformName =
+        InAppWebViewPlatform.instance?.runtimeType.toString() ?? '';
+    if (platformName.contains('Test')) {
+      return false;
+    }
+    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  }
+
   @override
   void dispose() {
     _rawController = null;
@@ -1239,3 +1278,153 @@ class _GuardFailedOverlay extends StatelessWidget {
     );
   }
 }
+
+/// Fallback notice presented when running on Windows desktop or unsupported platforms
+/// where native mobile WebViews cannot initialize.
+class _DesktopEnvironmentNotice extends StatelessWidget {
+  const _DesktopEnvironmentNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      color: theme.scaffoldBackgroundColor,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: Center(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(
+                  color: theme.colorScheme.outlineVariant,
+                  width: 0.5,
+                ),
+              ),
+              color: theme.colorScheme.surface,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      padding: const EdgeInsets.all(2.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: SweepGradient(
+                          colors: [
+                            theme.colorScheme.primary,
+                            const Color(0xFF6AAA9E),
+                            theme.colorScheme.primaryContainer,
+                            theme.colorScheme.primary,
+                          ],
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          shape: BoxShape.circle,
+                        ),
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/logo.png',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              Icons.phone_android_rounded,
+                              size: 28,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Android Device Required',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'ZeroScroll is an Android-first application that isolates Instagram Direct and Activity inside a hardened, native guarded WebView.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.terminal_rounded,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Run on Android Emulator or Device',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'flutter emulators --launch Pixel_8_Pro\nflutter run -d android',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: () async {
+                        final uri = Uri.parse('https://www.instagram.com/direct/inbox/');
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+                      label: const Text('Open DMs in Browser'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

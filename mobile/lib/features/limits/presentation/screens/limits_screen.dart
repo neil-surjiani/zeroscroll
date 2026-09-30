@@ -8,6 +8,7 @@ import '../../data/limits_repository.dart';
 import '../../domain/focus_schedule.dart';
 import '../../../settings/presentation/providers/feature_preferences_provider.dart';
 import '../providers/limits_state_provider.dart';
+import '../widgets/deactivate_app_dialog.dart';
 import 'stats_screen.dart';
 
 /// Screen allowing configuration of intentional daily screen time limits,
@@ -301,9 +302,52 @@ class LimitsScreen extends ConsumerWidget {
                 );
               }),
 
+            const SizedBox(height: 20),
+
+            // 5. APP DEACTIVATION SECTION (HARD LOCK)
+            _SectionHeader(title: 'App Deactivation (Hard Lock)', icon: Icons.lock_clock_rounded),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Lock yourself out of ZeroScroll for a chosen duration (hours or days). Once activated, the app cannot be opened until the timer expires—there are strictly no emergency bypasses or "one more minute" options.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const ValueKey('limits_deactivate_app_button'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFED4956),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.lock_rounded, size: 18),
+                        label: const Text(
+                          'Deactivate ZeroScroll...',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () => DeactivateAppDialog.show(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             const SizedBox(height: 24),
 
-            // 5. DATA MANAGEMENT & WIPE
+            // 6. DATA MANAGEMENT & WIPE
             _SectionHeader(title: 'Data Management', icon: Icons.shield_outlined),
             Card(
               child: Column(

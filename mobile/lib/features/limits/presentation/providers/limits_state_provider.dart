@@ -89,6 +89,14 @@ class LimitsConfigNotifier extends StateNotifier<AsyncValue<LimitsConfig>> {
     final updated = current.copyWith(reelsAvoidedCount: current.reelsAvoidedCount + 1);
     await updateConfig(updated);
   }
+
+  /// Sets a hard lockout for [duration]. During this time, the app cannot be opened,
+  /// no emergency unlocks are allowed, and no ignores or extensions can be granted.
+  Future<void> deactivateApp(Duration duration) async {
+    final current = state.valueOrNull ?? const LimitsConfig();
+    final until = DateTime.now().add(duration);
+    await updateConfig(current.copyWith(deactivatedUntil: until));
+  }
 }
 
 /// Provider for reactive [LimitsConfig] updates.
@@ -134,6 +142,7 @@ class EmergencyUnlockNotifier extends StateNotifier<EmergencyUnlockState> {
     final config = await _repository.getLimitsConfig();
     final isActive = await _repository.isEmergencyUnlockActive();
     final used = await _repository.getEmergencyUnlocksUsedToday();
+    if (!mounted) return;
     state = EmergencyUnlockState(
       isActive: isActive,
       usedCount: used,
@@ -164,6 +173,11 @@ final activeLimitsStatusProvider = Provider<LimitsStatus>((ref) {
   if (config == null) return const AllowedStatus();
 
   final now = DateTime.now();
+
+  // 0. Hard Deactivation Check (Absolute highest priority - no bypass allowed)
+  if (config.isDeactivated(now)) {
+    return DeactivatedStatus(deactivatedUntil: config.deactivatedUntil!);
+  }
 
   // 1. Focus schedule check (takes precedence)
   final activeSchedule = config.getActiveFocusSchedule(now);

@@ -4,12 +4,25 @@ import 'focus_schedule.dart';
 sealed class LimitsStatus {
   const LimitsStatus();
 
-  bool get isLocked => this is FocusLockedStatus || this is DoneForTodayStatus;
+  bool get isLocked =>
+      this is FocusLockedStatus ||
+      this is DoneForTodayStatus ||
+      this is DeactivatedStatus;
 }
 
 /// Normal operation: app is unlocked and accessible.
 class AllowedStatus extends LimitsStatus {
   const AllowedStatus();
+}
+
+/// The user has deliberately deactivated/hard-locked the app until [deactivatedUntil].
+/// No emergency unlocks, no one more minute, no ignores allowed.
+class DeactivatedStatus extends LimitsStatus {
+  const DeactivatedStatus({
+    required this.deactivatedUntil,
+  });
+
+  final DateTime deactivatedUntil;
 }
 
 /// Active focus schedule is in effect: access is locked and notifications muted.

@@ -14,18 +14,37 @@ class WelcomeStepView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Icon badge
+          // Brand Logo badge
           Container(
-            width: 80,
-            height: 80,
+            width: 88,
+            height: 88,
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
-              shape: BoxShape.circle,
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant,
+                width: 0.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: Icon(
-              Icons.forum_outlined,
-              size: 44,
-              color: theme.colorScheme.primary,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.asset(
+                'assets/logo.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  Icons.forum_outlined,
+                  size: 44,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 20),
