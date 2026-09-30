@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock Infinite Reels Page - ZeroScroll Test Fixture</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    header {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 100;
+    }
+    main {
+      width: 100%;
+      height: 100%;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+    }
+    .reel-item {
+      width: 100%;
+      height: 100vh;
+      scroll-snap-align: start;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: #111;
+      border-bottom: 2px solid #222;
+    }
+    video {
+      width: 100%;
+      max-height: 80vh;
+      object-fit: cover;
+      background: #222;
+    }
+    .reel-controls {
+      position: absolute;
+      right: 16px;
+      bottom: 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .suggested-section, .more-from-section {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <!-- Profile link that must be hidden in single item viewer mode -->
+    <a id="profile-link" role="link" href="/creator_profile/">
+      <img alt="creator profile" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect fill='%23666' width='32' height='32'/%3E%3C/svg%3E" />
+      <span>@reel_creator</span>
+    </a>
+  </header>
+
+  <main id="reel-feed" role="main">
+    <!-- First Reel (Current) -->
+    <article id="reel-1" class="reel-item" data-reel-id="mock1">
+      <video id="video-1" loop controls preload="metadata">
+        <source src="data:video/mp4;base64,AAAA" type="video/mp4">
+      </video>
+
+      <div class="reel-controls">
+        <!-- Next reel button that must be hidden -->
+        <button id="next-reel-btn" aria-label="Next Reel">Next Reel</button>
+        <!-- Comments section link that must be hidden -->
+        <a id="comments-link" href="/reel/mock1/comments/" aria-label="Comments">Comments</a>
+      </div>
+
+      <!-- Suggested reels section that must be hidden -->
+      <div id="suggested-reels" class="suggested-section" aria-label="Suggested reels">
+        Suggested Reels
+      </div>
+
+      <!-- More from creator that must be hidden -->
+      <div id="more-from" class="more-from-section" aria-label="More from creator">
+        More from this creator
+      </div>
+    </article>
+
+    <!-- Second Reel (Should never be reachable via scroll or swipe in ZeroScroll) -->
+    <article id="reel-2" class="reel-item" data-reel-id="mock2">
+      <video id="video-2" loop controls preload="metadata">
+        <source src="data:video/mp4;base64,AAAA" type="video/mp4">
+      </video>
+      <div class="more-from-section" aria-label="More reels">
+        More reels
+      </div>
+    </article>
+  </main>
+
+  <script>
+    // Event audit tracking for tests
+    window.__MOCK_EVENTS__ = [];
+    window.__NEXT_REEL_TRIGGERED__ = false;
+
+    // Track scroll / key events
+    ['touchmove', 'wheel', 'keydown'].forEach(function(evt) {
+      window.addEventListener(evt, function(e) {
+        window.__MOCK_EVENTS__.push({
+          type: evt,
+          defaultPrevented: e.defaultPrevented,
+          key: e.key
+        });
+      }, false);
+    });
+
+    // Helper functions for testing
+    window.simulateNextReelNavigation = function() {
+      window.__NEXT_REEL_TRIGGERED__ = true;
+      history.pushState(null, '', '/reel/mock2/');
+    };
+
+    window.simulateVideoEnded = function() {
+      var v = document.getElementById('video-1');
+      if (v) {
+        v.dispatchEvent(new Event('ended'));
+      }
+    };
+  </script>
+</body>
+</html>

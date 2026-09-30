@@ -38,10 +38,10 @@ export default function Footer() {
               Terms
             </Link>
             <a
-              href="mailto:contact@zeroscroll.app"
+              href="mailto:contact@zoomschool.app"
               className="transition-colors hover:text-teal-700 dark:hover:text-teal-400"
             >
-              contact@zeroscroll.app
+              contact@zoomschool.app
             </a>
           </nav>
         </div>

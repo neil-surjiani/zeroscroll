@@ -14,6 +14,9 @@ class WebviewState {
     this.errorMessage,
     this.canGoBack = false,
     this.currentUrl,
+    this.currentMediaId,
+    this.showBudgetReached = false,
+    this.lastDirectPath = '/direct/inbox/',
   });
 
   final WebviewMode mode;
@@ -26,8 +29,12 @@ class WebviewState {
   final String? errorMessage;
   final bool canGoBack;
   final String? currentUrl;
+  final String? currentMediaId;
+  final bool showBudgetReached;
+  final String lastDirectPath;
 
   bool get hasAnyError => isOffline || isSslError || hasHttpError;
+  bool get isViewerMode => mode == WebviewMode.singleMediaViewer;
 
   WebviewState copyWith({
     WebviewMode? mode,
@@ -40,7 +47,11 @@ class WebviewState {
     String? errorMessage,
     bool? canGoBack,
     String? currentUrl,
+    String? currentMediaId,
+    bool? showBudgetReached,
+    String? lastDirectPath,
     bool resetErrors = false,
+    bool resetMediaId = false,
   }) {
     return WebviewState(
       mode: mode ?? this.mode,
@@ -55,16 +66,41 @@ class WebviewState {
       errorMessage: resetErrors ? null : (errorMessage ?? this.errorMessage),
       canGoBack: canGoBack ?? this.canGoBack,
       currentUrl: currentUrl ?? this.currentUrl,
+      currentMediaId: resetMediaId
+          ? null
+          : (currentMediaId ?? this.currentMediaId),
+      showBudgetReached: showBudgetReached ?? this.showBudgetReached,
+      lastDirectPath: lastDirectPath ?? this.lastDirectPath,
     );
   }
 }
 
-/// State notifier managing webview loading, progress, error, and navigation states.
+/// State notifier managing webview loading, progress, error, viewer mode, and navigation states.
 class WebviewNotifier extends StateNotifier<WebviewState> {
   WebviewNotifier() : super(const WebviewState());
 
   void setMode(WebviewMode mode) {
     state = state.copyWith(mode: mode);
+  }
+
+  void setViewerMode({
+    required bool isViewer,
+    String? mediaId,
+    String? lastDirectPath,
+  }) {
+    state = state.copyWith(
+      mode: isViewer
+          ? WebviewMode.singleMediaViewer
+          : WebviewMode.directMessages,
+      currentMediaId: mediaId,
+      resetMediaId: !isViewer,
+      showBudgetReached: !isViewer ? false : state.showBudgetReached,
+      lastDirectPath: lastDirectPath ?? state.lastDirectPath,
+    );
+  }
+
+  void setBudgetReached(bool reached) {
+    state = state.copyWith(showBudgetReached: reached);
   }
 
   void onLoadStart(String? url) {

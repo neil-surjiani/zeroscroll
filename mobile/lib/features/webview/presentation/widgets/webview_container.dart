@@ -4,15 +4,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../limits/presentation/providers/reel_budget_provider.dart';
 import '../../../remote_config/data/remote_config_repository.dart';
 import '../../../remote_config/domain/route_config.dart';
 import '../../../security/presentation/providers/debug_log_provider.dart';
 import '../../data/webview_constants.dart';
 import '../../data/zero_scroll_web_view_controller_impl.dart';
+import '../../domain/webview_mode.dart';
 import '../providers/webview_controller_provider.dart';
 import '../providers/webview_provider.dart';
 
-/// Guarded WebView container displaying Direct Messages and Activity with 3-layer protection.
+/// Guarded WebView container displaying Direct Messages and Activity with 3-layer protection
+/// and isolated single-item media viewer mode.
 class WebviewContainer extends ConsumerStatefulWidget {
   const WebviewContainer({
     super.key,
@@ -39,6 +42,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
   Widget build(BuildContext context) {
     super.build(context);
     final webviewState = ref.watch(webviewNotifierProvider);
+    final todayReelCount = ref.watch(todayReelCountProvider);
     final theme = Theme.of(context);
 
     // Watch RouteConfig and Guard JS assets
@@ -96,10 +100,19 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
       ref.read(debugLogProvider.notifier).setConfigVersion(config.version);
     });
 
+    final isViewerMode = webviewState.mode == WebviewMode.singleMediaViewer;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        // Requirement 6: Hardware back button closes viewer mode and returns to DMs
+        if (ref.read(webviewNotifierProvider).mode ==
+            WebviewMode.singleMediaViewer) {
+          await _closeViewerModeAndReturnToDirect();
+          return;
+        }
+
         final controller = ref.read(webViewControllerProvider);
         if (controller != null && await controller.canGoBack()) {
           await controller.goBack();
@@ -109,6 +122,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
         }
       },
       child: Stack(
+        fit: StackFit.expand,
         children: [
           // Underlying guarded InAppWebView
           InAppWebView(
@@ -116,8 +130,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
             initialUserScripts: UnmodifiableListView<UserScript>([
               // LAYER 2 & 3: Injected at Document Start
               UserScript(
-                source:
-                    '''
+                source: '''
                   window.__ZEROSCROLL_CONFIG__ = Object.freeze(${config.toJsonString()});
                   $guardJs
                 ''',
@@ -162,6 +175,63 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   _showBlockedToast(path);
                 },
               );
+
+              // Requirement 1 & 7: JavaScript handler for single item viewer mode change
+              controller.addJavaScriptHandler(
+                handlerName: 'onViewerModeChanged',
+                callback: (args) async {
+                  final data = args.isNotEmpty && args[0] is Map
+                      ? args[0] as Map
+                      : null;
+                  final isViewer = data?['isViewer'] as bool? ?? false;
+                  final mediaId = data?['mediaId']?.toString();
+                  final lastDirectPath = data?['lastDirectPath']?.toString();
+
+                  if (isViewer) {
+                    final canOpen = await ref
+                        .read(reelBudgetServiceProvider)
+                        .canOpenReel();
+                    if (!canOpen) {
+                      ref
+                          .read(webviewNotifierProvider.notifier)
+                          .setBudgetReached(true);
+                      await controller.evaluateJavascript(
+                        source:
+                            'var v = document.querySelector("video"); if (v) v.pause();',
+                      );
+                    } else {
+                      ref
+                          .read(webviewNotifierProvider.notifier)
+                          .setBudgetReached(false);
+                      await ref
+                          .read(todayReelCountProvider.notifier)
+                          .recordReelOpened();
+                    }
+                  }
+
+                  ref
+                      .read(webviewNotifierProvider.notifier)
+                      .setViewerMode(
+                        isViewer: isViewer,
+                        mediaId: mediaId,
+                        lastDirectPath: lastDirectPath,
+                      );
+                },
+              );
+
+              // Requirement 3: Handler for blocked next-reel transitions
+              controller.addJavaScriptHandler(
+                handlerName: 'onNextReelBlocked',
+                callback: (args) {
+                  final data = args.isNotEmpty && args[0] is Map
+                      ? args[0] as Map
+                      : null;
+                  final message =
+                      data?['message']?.toString() ??
+                      config.viewerConfig.lastReelMessage;
+                  _showLastReelToast(message);
+                },
+              );
             },
             onConsoleMessage: (controller, consoleMessage) {
               ref
@@ -177,11 +247,30 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
               ref.read(webviewNotifierProvider.notifier).onLoadStart(urlString);
 
-              // LAYER 1: Check in Dart on load start
               if (url != null) {
                 final host = url.host.toLowerCase();
                 if (host.contains(WebViewConstants.allowedHost)) {
                   final path = url.path;
+
+                  // Check if this is a viewer path
+                  if (config.isViewerPath(path)) {
+                    final currentId = ref
+                        .read(webviewNotifierProvider)
+                        .currentMediaId;
+                    final targetId = _extractMediaId(path);
+
+                    // If moving from one reel to another reel in viewer mode
+                    if (currentId != null &&
+                        targetId != null &&
+                        currentId != targetId) {
+                      controller.stopLoading();
+                      _showLastReelToast(config.viewerConfig.lastReelMessage);
+                      controller.goBack();
+                      return;
+                    }
+                  }
+
+                  // LAYER 1: Check in Dart on load start
                   if (!config.isPathAllowed(path)) {
                     ref
                         .read(debugLogProvider.notifier)
@@ -209,6 +298,26 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               ref
                   .read(webviewNotifierProvider.notifier)
                   .onLoadStop(urlString, canGoBack: canGoBack);
+
+              // Check if loaded page is a viewer page directly
+              if (url != null && config.isViewerPath(url.path)) {
+                final canOpen = await ref
+                    .read(reelBudgetServiceProvider)
+                    .canOpenReel();
+                if (!canOpen) {
+                  ref
+                      .read(webviewNotifierProvider.notifier)
+                      .setBudgetReached(true);
+                  await controller.evaluateJavascript(
+                    source:
+                        'var v = document.querySelector("video"); if (v) v.pause();',
+                  );
+                } else {
+                  ref
+                      .read(webviewNotifierProvider.notifier)
+                      .setBudgetReached(false);
+                }
+              }
 
               // Ensure CSS hiding and location checks remain active after complete load
               await controller.evaluateJavascript(
@@ -263,7 +372,6 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
 
               // LAYER 1: Host check
               if (!config.isHostAllowed(host)) {
-                // Cancel navigation and prompt to open external URL in system browser
                 _confirmAndLaunchExternalUrl(context, uri);
                 return NavigationActionPolicy.CANCEL;
               }
@@ -271,6 +379,21 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               // LAYER 1: Allowed Instagram path check
               if (host.contains(WebViewConstants.allowedHost)) {
                 final path = uri.path;
+
+                // Viewer mode next-reel check
+                if (config.isViewerPath(path)) {
+                  final currentId = ref
+                      .read(webviewNotifierProvider)
+                      .currentMediaId;
+                  final targetId = _extractMediaId(path);
+                  if (currentId != null &&
+                      targetId != null &&
+                      currentId != targetId) {
+                    _showLastReelToast(config.viewerConfig.lastReelMessage);
+                    return NavigationActionPolicy.CANCEL;
+                  }
+                }
+
                 if (!config.isPathAllowed(path)) {
                   ref
                       .read(debugLogProvider.notifier)
@@ -303,10 +426,11 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               ),
             ),
 
-          // Initial Loading Placeholder (prevents blank white screen on cold start)
+          // Initial Loading Placeholder
           if (webviewState.isLoading &&
               webviewState.progress < 0.25 &&
-              !webviewState.hasAnyError)
+              !webviewState.hasAnyError &&
+              !isViewerMode)
             Container(
               color: theme.colorScheme.surface,
               child: Center(
@@ -340,9 +464,199 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               isSsl: webviewState.isSslError,
               onRetry: _retryLoading,
             ),
+
+          // Requirement 5: Persistent top bar overlay with Close button and today's reel count
+          if (isViewerMode && !webviewState.showBudgetReached)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.85),
+                        Colors.black.withValues(alpha: 0.5),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      FilledButton.icon(
+                        key: const ValueKey('viewer_close_button'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onPressed: _closeViewerModeAndReturnToDirect,
+                        icon: const Icon(Icons.close_rounded, size: 22),
+                        label: const Text(
+                          'Close',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.play_circle_outline_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Reels today: $todayReelCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Requirement 7: Budget Reached Screen Overlay
+          if (webviewState.showBudgetReached)
+            Positioned.fill(
+              child: Container(
+                color: theme.scaffoldBackgroundColor,
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer.withValues(
+                            alpha: 0.35,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.timer_off_outlined,
+                          size: 64,
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Daily Reel Budget Reached',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'You have reached your daily reel budget. Close the viewer to return to your direct messages.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      FilledButton.icon(
+                        key: const ValueKey('budget_return_button'),
+                        onPressed: _closeViewerModeAndReturnToDirect,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        label: const Text('Return to Messages'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  /// Closes viewer mode and navigates history back until a Direct Messages path is reached.
+  Future<void> _closeViewerModeAndReturnToDirect() async {
+    final controller = _rawController;
+    final lastDirectPath = ref.read(webviewNotifierProvider).lastDirectPath;
+    ref.read(webviewNotifierProvider.notifier).setViewerMode(isViewer: false);
+
+    if (controller != null) {
+      try {
+        final history = await controller.getCopyBackForwardList();
+        if (history != null &&
+            history.currentIndex != null &&
+            history.list != null) {
+          final currentIndex = history.currentIndex!;
+          final list = history.list!;
+          int? targetIndex;
+          for (int i = currentIndex - 1; i >= 0; i--) {
+            final path = list[i].url?.path ?? '';
+            final full = list[i].url?.toString() ?? '';
+            if (path.contains('/direct/') || full.contains('/direct/')) {
+              targetIndex = i;
+              break;
+            }
+          }
+          if (targetIndex != null) {
+            final steps = targetIndex - currentIndex;
+            await controller.goBackOrForward(steps: steps);
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // Fallback directly to last direct path or inbox
+      final host = WebViewConstants.allowedHost;
+      final target = WebUri('https://$host$lastDirectPath');
+      await controller.loadUrl(urlRequest: URLRequest(url: target));
+    }
+  }
+
+  String? _extractMediaId(String path) {
+    final match = RegExp(r'^/(?:reel|reels|p)/([^/]+)').firstMatch(path);
+    return match?.group(1);
   }
 
   void _retryLoading() {
@@ -375,6 +689,38 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
         backgroundColor: const Color(0xFF22272E),
+      ),
+    );
+  }
+
+  void _showLastReelToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF1E2229),
       ),
     );
   }

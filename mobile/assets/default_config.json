@@ -43,5 +43,37 @@
     "div[role='banner']",
     "div[data-testid='app-upsell']"
   ],
-  "customCss": "/* ZeroScroll Core CSS Guard */\na[href='/'], a[href^='/explore'], a[href^='/reels'], a[aria-label='Home'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'], section[aria-label='Stories'], div[aria-label*='Stories'], div[data-testid='story-tray'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'], div:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']) { display: none !important; visibility: hidden !important; }"
+  "customCss": "/* ZeroScroll Core CSS Guard */\na[href='/'], a[href^='/explore'], a[href^='/reels'], a[aria-label='Home'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'], section[aria-label='Stories'], div[aria-label*='Stories'], div[data-testid='story-tray'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'], div:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']) { display: none !important; visibility: hidden !important; }",
+  "viewerConfig": {
+    "enabled": true,
+    "pathPatterns": [
+      "^/reel/[^/]+/?$",
+      "^/reels/[^/]+/?$",
+      "^/p/[^/]+/?$"
+    ],
+    "hideSelectors": [
+      "a[href*='/comments/']",
+      "div[aria-label*='Comments']",
+      "button[aria-label*='Next']",
+      "div[aria-label*='Next']",
+      "a[aria-label*='Next']",
+      "div[aria-label*='Suggested']",
+      "div:has(> *[aria-label*='More from'])",
+      "div[aria-label*='More reels']",
+      "div[aria-label*='More posts']",
+      "header a[role='link']",
+      "a[role='link']:has(img[alt*='profile'])"
+    ],
+    "scrollContainerSelectors": [
+      "main",
+      "[role='main']",
+      "article",
+      "div[data-pressable-container='true']"
+    ],
+    "lockScroll": true,
+    "preventScrollKeys": true,
+    "blockNextReel": true,
+    "disableVideoLoop": true,
+    "lastReelMessage": "That's the last one."
+  }
 }

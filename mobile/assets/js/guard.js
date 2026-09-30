@@ -17,10 +17,63 @@
   const hideSelectors = config.hideSelectors || [];
   const customCss = config.customCss || '';
 
+  // SINGLE ITEM VIEWER CONFIG & RULES
+  const viewerConfig = config.viewerConfig || {};
+  const viewerEnabled = viewerConfig.enabled !== false;
+  const viewerPatterns = (viewerConfig.pathPatterns || [
+    '^/reel/[^/]+/?$',
+    '^/reels/[^/]+/?$',
+    '^/p/[^/]+/?$'
+  ]).map(function(p) {
+    return new RegExp(p);
+  });
+  const viewerHideSelectors = viewerConfig.hideSelectors || [];
+  const viewerScrollSelectors = viewerConfig.scrollContainerSelectors || [
+    'main',
+    "[role='main']",
+    'article',
+    "div[data-pressable-container='true']"
+  ];
+  const lockScroll = viewerConfig.lockScroll !== false;
+  const preventScrollKeys = viewerConfig.preventScrollKeys !== false;
+  const blockNextReel = viewerConfig.blockNextReel !== false;
+  const disableVideoLoop = viewerConfig.disableVideoLoop !== false;
+  const lastReelMessage = viewerConfig.lastReelMessage || "That's the last one.";
+
+  var isViewerModeActive = false;
+  var currentViewerMediaId = null;
+  var lastDirectPath = '/direct/inbox/';
+  var isNavigatingBackFromNextReel = false;
+  var isHandlingBlocked = false;
+
   function cleanPath(pathname) {
     if (!pathname) return '/';
     var clean = pathname.split('?')[0].split('#')[0];
     return clean || '/';
+  }
+
+  function extractMediaInfo(path) {
+    var clean = cleanPath(path);
+    var match = clean.match(/^\/(reel|reels|p)\/([^/]+)/);
+    if (match) {
+      return {
+        type: match[1],
+        id: match[2],
+        path: clean
+      };
+    }
+    return null;
+  }
+
+  function isViewerModePath(path) {
+    if (!viewerEnabled) return false;
+    var clean = cleanPath(path);
+    for (var i = 0; i < viewerPatterns.length; i++) {
+      if (viewerPatterns[i].test(clean)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function isPathAllowed(pathname) {
@@ -40,11 +93,9 @@
       }
     }
 
-    // Default deny: any other route (like profiles or unhandled discovery tabs) is blocked
+    // Default deny: any other route is blocked
     return false;
   }
-
-  var isHandlingBlocked = false;
 
   function notifyFlutterBlocked(path, originalUrl) {
     console.warn('[ZeroScroll Guard] Blocked prohibited navigation:', path);
@@ -55,9 +106,34 @@
           url: originalUrl || window.location.href
         });
       }
-    } catch (e) {
-      // Handler not ready or failed
-    }
+    } catch (e) {}
+  }
+
+  function notifyViewerModeChanged(isViewer, mediaInfo) {
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onViewerModeChanged', {
+          isViewer: isViewer,
+          mediaId: mediaInfo ? mediaInfo.id : null,
+          mediaType: mediaInfo ? mediaInfo.type : null,
+          path: mediaInfo ? mediaInfo.path : window.location.pathname,
+          lastDirectPath: lastDirectPath || '/direct/inbox/'
+        });
+      }
+    } catch (e) {}
+  }
+
+  function notifyNextReelBlocked(blockedId, currentId) {
+    console.warn('[ZeroScroll Viewer] Blocked transition to next reel:', blockedId);
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onNextReelBlocked', {
+          blockedId: blockedId,
+          currentId: currentId,
+          message: lastReelMessage
+        });
+      }
+    } catch (e) {}
   }
 
   function blockNavigation(targetPath) {
@@ -85,23 +161,241 @@
     }, 50);
   }
 
+  // --- VIEWER MODE: SCROLL LOCKING ---
+  function applyScrollLock(enable) {
+    var html = document.documentElement;
+    var body = document.body;
+    if (enable) {
+      if (html) {
+        html.style.setProperty('overflow', 'hidden', 'important');
+        html.style.setProperty('touch-action', 'none', 'important');
+        html.style.setProperty('overscroll-behavior', 'none', 'important');
+      }
+      if (body) {
+        body.style.setProperty('overflow', 'hidden', 'important');
+        body.style.setProperty('touch-action', 'none', 'important');
+        body.style.setProperty('overscroll-behavior', 'none', 'important');
+      }
+    } else {
+      if (html) {
+        html.style.removeProperty('overflow');
+        html.style.removeProperty('touch-action');
+        html.style.removeProperty('overscroll-behavior');
+      }
+      if (body) {
+        body.style.removeProperty('overflow');
+        body.style.removeProperty('touch-action');
+        body.style.removeProperty('overscroll-behavior');
+      }
+    }
+  }
+
+  function applyViewerCss(enable) {
+    var styleTag = document.getElementById('zeroscroll-viewer-style');
+    if (!enable) {
+      if (styleTag && styleTag.parentNode) {
+        styleTag.parentNode.removeChild(styleTag);
+      }
+      return;
+    }
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = 'zeroscroll-viewer-style';
+      var target = document.head || document.documentElement;
+      if (target) {
+        target.appendChild(styleTag);
+      }
+    }
+
+    var rules = [];
+    if (viewerScrollSelectors && viewerScrollSelectors.length > 0) {
+      rules.push(viewerScrollSelectors.join(',\n') + ' { overflow: hidden !important; touch-action: none !important; overscroll-behavior: none !important; }');
+    }
+    if (viewerHideSelectors && viewerHideSelectors.length > 0) {
+      rules.push(viewerHideSelectors.join(',\n') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }');
+    }
+    if (styleTag) {
+      styleTag.textContent = rules.join('\n');
+    }
+  }
+
+  // Capture phase listener for gestures
+  function onScrollCapture(e) {
+    if (isViewerModeActive && lockScroll) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return false;
+    }
+  }
+
+  var scrollKeyCodes = [
+    ' ',
+    'Space',
+    'Spacebar',
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End'
+  ];
+
+  function onKeyDownCapture(e) {
+    if (!isViewerModeActive || !preventScrollKeys) return;
+    var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) {
+      return;
+    }
+    if (scrollKeyCodes.indexOf(e.key) !== -1 || scrollKeyCodes.indexOf(e.code) !== -1) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return false;
+    }
+  }
+
+  window.addEventListener('touchmove', onScrollCapture, { capture: true, passive: false });
+  window.addEventListener('wheel', onScrollCapture, { capture: true, passive: false });
+  window.addEventListener('keydown', onKeyDownCapture, { capture: true, passive: false });
+
+  // --- VIEWER MODE: VIDEO BEHAVIOR & REPLAY BUTTON ---
+  function showReplayOverlay(video) {
+    var existing = document.getElementById('zeroscroll-replay-overlay');
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'zeroscroll-replay-overlay';
+      existing.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);z-index:999998;pointer-events:auto;';
+
+      var btn = document.createElement('button');
+      btn.id = 'zeroscroll-replay-button';
+      btn.setAttribute('aria-label', 'Replay video');
+      btn.style.cssText = 'background:rgba(20,20,20,0.88);border:2px solid rgba(255,255,255,0.85);color:#fff;border-radius:50px;padding:12px 28px;display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-tap-highlight-color:transparent;';
+      btn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 2.97-2.16 5.44-5 5.92v2.02c3.95-.49 7-3.85 7-7.94 0-4.42-3.58-8-8-8zm-6 8c0-1.65.67-3.15 1.76-4.24L6.34 7.34C4.9 8.79 4 10.79 4 13c0 4.09 3.05 7.45 7 7.94v-2.02c-2.84-.48-5-2.95-5-5.92z"/></svg><span>Replay</span>';
+
+      btn.onclick = function(e) {
+        e.stopPropagation();
+        existing.style.display = 'none';
+        if (video) {
+          video.currentTime = 0;
+          video.play();
+        }
+      };
+
+      existing.appendChild(btn);
+      (document.body || document.documentElement).appendChild(existing);
+    } else {
+      existing.style.display = 'flex';
+    }
+  }
+
+  function hideReplayOverlay() {
+    var existing = document.getElementById('zeroscroll-replay-overlay');
+    if (existing) {
+      existing.style.display = 'none';
+    }
+  }
+
+  function attachVideoControls(video) {
+    if (!video || video.__zeroscroll_attached__) return;
+    video.__zeroscroll_attached__ = true;
+
+    if (disableVideoLoop) {
+      video.loop = false;
+      video.removeAttribute('loop');
+    }
+
+    video.addEventListener('ended', function() {
+      video.pause();
+      showReplayOverlay(video);
+    });
+
+    video.addEventListener('play', function() {
+      hideReplayOverlay();
+    });
+  }
+
+  function scanVideos() {
+    if (!isViewerModeActive) return;
+    var videos = document.querySelectorAll('video');
+    for (var i = 0; i < videos.length; i++) {
+      attachVideoControls(videos[i]);
+    }
+  }
+
+  // --- LOCATION & VIEWER MODE STATE ENGINE ---
+  function checkViewerModeLocation(pathname) {
+    var path = cleanPath(pathname || window.location.pathname);
+
+    // Keep track of last direct messages path
+    if (path.indexOf('/direct/') === 0) {
+      lastDirectPath = path;
+    }
+
+    if (isViewerModePath(path)) {
+      var mediaInfo = extractMediaInfo(path);
+      if (!isViewerModeActive) {
+        // Entering viewer mode
+        isViewerModeActive = true;
+        currentViewerMediaId = mediaInfo ? mediaInfo.id : null;
+        applyScrollLock(true);
+        applyViewerCss(true);
+        scanVideos();
+        notifyViewerModeChanged(true, mediaInfo);
+      } else if (blockNextReel && mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+        // Moving to a DIFFERENT reel while in viewer mode
+        if (!isNavigatingBackFromNextReel) {
+          isNavigatingBackFromNextReel = true;
+          notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+          window.history.back();
+          setTimeout(function() {
+            isNavigatingBackFromNextReel = false;
+          }, 300);
+        }
+        return false;
+      }
+      return true;
+    } else {
+      if (isViewerModeActive) {
+        // Exiting viewer mode
+        isViewerModeActive = false;
+        currentViewerMediaId = null;
+        applyScrollLock(false);
+        applyViewerCss(false);
+        hideReplayOverlay();
+        notifyViewerModeChanged(false, null);
+      }
+      return false;
+    }
+  }
+
   function checkCurrentLocation() {
     var currentPath = window.location.pathname;
     if (!isPathAllowed(currentPath)) {
       blockNavigation(currentPath);
+      return;
     }
+    checkViewerModeLocation(currentPath);
   }
 
-  // LAYER 2: Wrap History API (pushState & replaceState)
+  // --- LAYER 2: Wrap History API ---
   var originalPushState = window.history.pushState;
   window.history.pushState = function(state, unused, url) {
     if (url) {
       try {
         var targetUrl = new URL(url, window.location.origin);
         if (targetUrl.origin === window.location.origin) {
-          if (!isPathAllowed(targetUrl.pathname)) {
-            blockNavigation(targetUrl.pathname);
+          var targetPath = targetUrl.pathname;
+          if (!isPathAllowed(targetPath)) {
+            blockNavigation(targetPath);
             return;
+          }
+          if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+            var mediaInfo = extractMediaInfo(targetPath);
+            if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+              notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+              return;
+            }
           }
         }
       } catch (err) {}
@@ -117,9 +411,17 @@
       try {
         var targetUrl = new URL(url, window.location.origin);
         if (targetUrl.origin === window.location.origin) {
-          if (!isPathAllowed(targetUrl.pathname)) {
-            blockNavigation(targetUrl.pathname);
+          var targetPath = targetUrl.pathname;
+          if (!isPathAllowed(targetPath)) {
+            blockNavigation(targetPath);
             return;
+          }
+          if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+            var mediaInfo = extractMediaInfo(targetPath);
+            if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+              notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+              return;
+            }
           }
         }
       } catch (err) {}
@@ -129,7 +431,7 @@
     return result;
   };
 
-  // Listen to popstate and hashchange (back button, forward button, hash changes)
+  // Listen to popstate and hashchange
   window.addEventListener('popstate', function() {
     checkCurrentLocation();
   }, true);
@@ -138,7 +440,7 @@
     checkCurrentLocation();
   }, true);
 
-  // Intercept anchor clicks in the capture phase before SPAs intercept them
+  // Intercept anchor clicks in the capture phase
   document.addEventListener('click', function(event) {
     try {
       var anchor = event.target && event.target.closest ? event.target.closest('a') : null;
@@ -146,16 +448,27 @@
 
       var targetUrl = new URL(anchor.href, window.location.origin);
       if (targetUrl.origin === window.location.origin) {
-        if (!isPathAllowed(targetUrl.pathname)) {
+        var targetPath = targetUrl.pathname;
+        if (!isPathAllowed(targetPath)) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          blockNavigation(targetUrl.pathname);
+          blockNavigation(targetPath);
+          return;
+        }
+        if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+          var mediaInfo = extractMediaInfo(targetPath);
+          if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+            return;
+          }
         }
       }
     } catch (e) {}
   }, true);
 
-  // LAYER 3: CSS Injection with style element and adoptedStyleSheets fallback
+  // --- LAYER 3: CSS Injection ---
   function buildCssRules() {
     var rules = [];
     if (hideSelectors && hideSelectors.length > 0) {
@@ -174,7 +487,6 @@
 
     var inlineApplied = false;
 
-    // 1. Try injecting <style> element
     try {
       var styleTag = document.getElementById('zeroscroll-guard-style');
       if (!styleTag) {
@@ -193,7 +505,6 @@
       inlineApplied = false;
     }
 
-    // 2. CSP Fallback: If style tag failed or if adoptedStyleSheets is supported
     try {
       if ((!inlineApplied || document.adoptedStyleSheets) && 'adoptedStyleSheets' in document && typeof CSSStyleSheet !== 'undefined') {
         var sheet = window.__ZEROSCROLL_STYLESHEET__;
@@ -210,16 +521,19 @@
     } catch (e) {}
   }
 
-  // DOM MutationObserver for dynamic React/SPA rendering & re-injections
+  // --- DOM MutationObserver ---
   function setupMutationObserver() {
     checkCurrentLocation();
     applyCss();
 
     var observer = new MutationObserver(function() {
-      // Verify location on significant DOM re-renders
       checkCurrentLocation();
-      // Ensure style element or adopted stylesheet remains active
       applyCss();
+      if (isViewerModeActive) {
+        applyScrollLock(true);
+        applyViewerCss(true);
+        scanVideos();
+      }
     });
 
     if (document.documentElement) {
@@ -237,11 +551,16 @@
     }
   }
 
-  // Initial check & run
+  // Initial run
   checkCurrentLocation();
   applyCss();
   setupMutationObserver();
 
-  // Periodic heartbeat safety check for silent background URL changes
-  setInterval(checkCurrentLocation, 250);
+  // Periodic safety check
+  setInterval(function() {
+    checkCurrentLocation();
+    if (isViewerModeActive) {
+      scanVideos();
+    }
+  }, 250);
 })();

@@ -36,6 +36,8 @@ The website is configured using the following environment variables:
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_APK_URL` | Direct download link for the Android `.apk` binary | `https://github.com/apexventures/zeroscroll/releases/latest/download/zeroscroll.apk` |
 | `NEXT_PUBLIC_APP_VERSION` | Version label displayed on download badges | `v1.0.0` |
+| `NEXT_PUBLIC_SITE_URL` | Primary website domain | `https://zoomschool.app` |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Support & legal contact email | `contact@zoomschool.app` |
 
 Copy the example file to create your local environment:
 ```bash

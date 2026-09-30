@@ -111,7 +111,7 @@ export default function TermsPage() {
               For inquiries regarding these Terms of Service, please reach out via email at:
             </p>
             <p className="font-medium text-teal-700 dark:text-teal-400">
-              <a href="mailto:contact@zeroscroll.app">contact@zeroscroll.app</a>
+              <a href="mailto:contact@zoomschool.app">contact@zoomschool.app</a>
             </p>
           </section>
 

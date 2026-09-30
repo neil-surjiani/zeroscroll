@@ -14,3 +14,12 @@ final activeShellTabProvider =
     StateNotifierProvider<ShellTabNotifier, ShellTab>((ref) {
       return ShellTabNotifier();
     });
+
+/// Provider for unread message badge count on Messages tab (placeholder, fed by Prompt 6).
+final unreadMessagesCountProvider = StateProvider<int>((ref) => 2);
+
+/// Provider controlling whether the top slim stats bar is collapsed.
+final statsBarCollapsedProvider = StateProvider<bool>((ref) => false);
+
+/// Provider tracking active time in app today in minutes (placeholder, fed by Prompt 7).
+final todayUsageMinutesProvider = StateProvider<int>((ref) => 14);
