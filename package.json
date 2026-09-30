@@ -1,0 +1,11 @@
+{
+  "name": "zeroscroll",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix website run build",
+    "dev": "npm --prefix website run dev",
+    "start": "npm --prefix website run start",
+    "lint": "npm --prefix website run lint"
+  }
+}

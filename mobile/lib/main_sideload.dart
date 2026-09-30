@@ -1,0 +1,17 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/config/app_flavor.dart';
+import 'main.dart';
+
+/// Entrypoint for the Sideload / Direct Distribution build flavor.
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    ProviderScope(
+      overrides: [
+        flavorConfigProvider.overrideWithValue(FlavorConfig.sideload()),
+      ],
+      child: const ZeroScrollApp(),
+    ),
+  );
+}

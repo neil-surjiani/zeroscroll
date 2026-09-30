@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ZeroScroll (Play)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_play.dart",
+      "args": [
+        "--flavor",
+        "play"
+      ]
+    },
+    {
+      "name": "ZeroScroll (Sideload)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_sideload.dart",
+      "args": [
+        "--flavor",
+        "sideload"
+      ]
+    },
+    {
+      "name": "ZeroScroll (Play - Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_play.dart",
+      "args": [
+        "--flavor",
+        "play",
+        "--release"
+      ]
+    },
+    {
+      "name": "ZeroScroll (Sideload - Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_sideload.dart",
+      "args": [
+        "--flavor",
+        "sideload",
+        "--release"
+      ]
+    }
+  ]
+}

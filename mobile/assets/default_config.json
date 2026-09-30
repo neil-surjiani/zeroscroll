@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "userAgent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+  "fallbackPath": "/direct/inbox/",
+  "allowedPaths": [
+    "^/direct/",
+    "^/accounts/login",
+    "^/accounts/activity",
+    "^/accounts/onetap",
+    "^/challenge/",
+    "^/two_factor/",
+    "^/accounts/suspended",
+    "^/reel/[^/]+/?$",
+    "^/reels/[^/]+/?$",
+    "^/p/[^/]+/?$"
+  ],
+  "alwaysBlockedPaths": [
+    "^/$",
+    "^/explore",
+    "^/reels/?$",
+    "^/stories/",
+    "^/accounts/edit",
+    "^/(?!direct|accounts|challenge|two_factor|reel|reels|p|legal|static)[a-zA-Z0-9._]+/?$"
+  ],
+  "hideSelectors": [
+    "a[href='/']",
+    "a[href^='/explore']",
+    "a[href^='/reels']",
+    "a[aria-label='Home']",
+    "a[aria-label='Search']",
+    "a[aria-label='Explore']",
+    "a[aria-label='Reels']",
+    "section[aria-label='Stories']",
+    "div[aria-label*='Stories']",
+    "div[data-testid='story-tray']",
+    "div[data-testid='mobile-top-nav']",
+    "div[data-testid='mobile-nav']",
+    "div[role='tablist'] a[href='/']",
+    "div[role='tablist'] a[href^='/explore']",
+    "div[role='tablist'] a[href^='/reels']",
+    "div:has(> a[href*='play.google.com'])",
+    "div:has(> a[href*='apps.apple.com'])",
+    "div[role='banner']",
+    "div[data-testid='app-upsell']"
+  ],
+  "customCss": "/* ZeroScroll Core CSS Guard */\na[href='/'], a[href^='/explore'], a[href^='/reels'], a[aria-label='Home'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'], section[aria-label='Stories'], div[aria-label*='Stories'], div[data-testid='story-tray'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'], div:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']) { display: none !important; visibility: hidden !important; }"
+}
