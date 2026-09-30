@@ -3,12 +3,12 @@ import '../../data/onboarding_repository.dart';
 
 class OnboardingNotifier extends StateNotifier<bool> {
   OnboardingNotifier(this._repository) : super(false) {
-    _load();
+    load();
   }
 
   final OnboardingRepository _repository;
 
-  Future<void> _load() async {
+  Future<void> load() async {
     final completed = await _repository.isOnboardingCompleted();
     state = completed;
   }
@@ -16,6 +16,11 @@ class OnboardingNotifier extends StateNotifier<bool> {
   Future<void> complete() async {
     await _repository.completeOnboarding();
     state = true;
+  }
+
+  Future<void> reset() async {
+    await _repository.resetOnboarding();
+    state = false;
   }
 }
 

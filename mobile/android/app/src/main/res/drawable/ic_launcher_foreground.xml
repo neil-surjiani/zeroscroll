@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Focus Ring -->
+    <path
+        android:strokeColor="#3B82F6"
+        android:strokeWidth="3.5"
+        android:pathData="M 54,26 A 28,28 0 1,1 53.9,26 Z" />
+    <!-- Zero / Infinite Scroll Slash Guard (calm diagonal & horizontal focus shield) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 40,42 L 68,42 L 44,66 L 68,66 L 68,70 L 38,70 L 62,46 L 40,46 Z" />
+</vector>

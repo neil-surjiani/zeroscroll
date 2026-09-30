@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- Circular Shield Outline -->
+    <path
+        android:strokeColor="#2563EB"
+        android:strokeWidth="2.5"
+        android:pathData="M 36,8 A 28,28 0 1,1 35.9,8 Z" />
+    <!-- Center Minimalist Z Focus -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M 24,24 L 48,24 L 28,48 L 48,48 L 48,51 L 22,51 L 42,27 L 24,27 Z" />
+</vector>

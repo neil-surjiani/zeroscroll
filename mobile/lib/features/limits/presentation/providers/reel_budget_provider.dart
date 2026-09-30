@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/stub_reel_budget_service.dart';
+import '../../data/limits_repository.dart';
 import '../../domain/reel_budget_service.dart';
 
-/// Provider for [ReelBudgetService] dependency.
+/// Provider for [ReelBudgetService] dependency, backed by [limitsRepositoryProvider].
 final reelBudgetServiceProvider = Provider<ReelBudgetService>((ref) {
-  return StubReelBudgetService();
+  return ref.watch(limitsRepositoryProvider);
 });
 
 /// StateNotifier providing reactive updates for today's watched reels.

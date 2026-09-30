@@ -25,6 +25,16 @@ class ZeroScrollWebViewControllerImpl implements ZeroScrollWebViewController {
   }
 
   @override
+  Future<void> loadThread(String threadId) async {
+    final cleanId = Uri.encodeComponent(threadId);
+    await _controller.loadUrl(
+      urlRequest: URLRequest(
+        url: WebUri('https://${WebViewConstants.allowedHost}/direct/t/$cleanId/'),
+      ),
+    );
+  }
+
+  @override
   Future<void> loadNotifications() async {
     await _controller.loadUrl(
       urlRequest: URLRequest(url: WebUri(WebViewConstants.notificationsUrl)),

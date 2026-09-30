@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../notifications/presentation/providers/notifications_provider.dart';
 import '../../domain/shell_tab.dart';
 
 /// Riverpod state notifier for active shell tab.
@@ -15,8 +16,10 @@ final activeShellTabProvider =
       return ShellTabNotifier();
     });
 
-/// Provider for unread message badge count on Messages tab (placeholder, fed by Prompt 6).
-final unreadMessagesCountProvider = StateProvider<int>((ref) => 2);
+/// Provider for unread message badge count on Messages tab, reflecting live captured DMs.
+final unreadMessagesCountProvider = Provider<int>((ref) {
+  return ref.watch(unreadDmCountProvider);
+});
 
 /// Provider controlling whether the top slim stats bar is collapsed.
 final statsBarCollapsedProvider = StateProvider<bool>((ref) => false);

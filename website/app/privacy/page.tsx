@@ -81,7 +81,7 @@ export default function PrivacyPage() {
               4. Website Privacy
             </h2>
             <p>
-              This website (<span className="font-mono text-sm">zoomschool.app</span>) uses:
+              This website uses:
             </p>
             <ul className="list-disc space-y-1.5 pl-6 text-neutral-600 dark:text-neutral-300">
               <li>No cookies of any kind</li>
@@ -90,18 +90,6 @@ export default function PrivacyPage() {
             </ul>
             <p>
               We do not track your visits, IP addresses, or browsing history when you view this landing page.
-            </p>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
-              5. Contact Us
-            </h2>
-            <p>
-              If you have any questions or concerns regarding our privacy practices, please contact us at:
-            </p>
-            <p className="font-medium text-teal-700 dark:text-teal-400">
-              <a href="mailto:contact@zoomschool.app">contact@zoomschool.app</a>
             </p>
           </section>
 

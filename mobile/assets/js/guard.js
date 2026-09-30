@@ -6,45 +6,47 @@
   }
   window.__ZEROSCROLL_GUARD_INITIALIZED__ = true;
 
-  const config = window.__ZEROSCROLL_CONFIG__ || {};
-  const fallbackPath = config.fallbackPath || '/direct/inbox/';
-  const allowedPatterns = (config.allowedPaths || []).map(function(p) {
+  var config = window.__ZEROSCROLL_CONFIG__ || {};
+  var fallbackPath = config.fallbackPath || '/direct/inbox/';
+  var allowedPatterns = (config.allowedPaths || []).map(function(p) {
     return new RegExp(p);
   });
-  const blockedPatterns = (config.alwaysBlockedPaths || []).map(function(p) {
+  var blockedPatterns = (config.alwaysBlockedPaths || []).map(function(p) {
     return new RegExp(p);
   });
-  const hideSelectors = config.hideSelectors || [];
-  const customCss = config.customCss || '';
+  var hideSelectors = config.hideSelectors || [];
+  var customCss = config.extraCss || config.customCss || '';
 
   // SINGLE ITEM VIEWER CONFIG & RULES
-  const viewerConfig = config.viewerConfig || {};
-  const viewerEnabled = viewerConfig.enabled !== false;
-  const viewerPatterns = (viewerConfig.pathPatterns || [
+  var viewerConfig = config.viewerModeRules || config.viewerConfig || {};
+  var viewerEnabled = viewerConfig.enabled !== false;
+  var viewerPatterns = (viewerConfig.pathPatterns || [
     '^/reel/[^/]+/?$',
     '^/reels/[^/]+/?$',
     '^/p/[^/]+/?$'
   ]).map(function(p) {
     return new RegExp(p);
   });
-  const viewerHideSelectors = viewerConfig.hideSelectors || [];
-  const viewerScrollSelectors = viewerConfig.scrollContainerSelectors || [
+  var viewerHideSelectors = viewerConfig.hideSelectors || [];
+  var viewerScrollSelectors = viewerConfig.scrollContainerSelectors || [
     'main',
     "[role='main']",
     'article',
     "div[data-pressable-container='true']"
   ];
-  const lockScroll = viewerConfig.lockScroll !== false;
-  const preventScrollKeys = viewerConfig.preventScrollKeys !== false;
-  const blockNextReel = viewerConfig.blockNextReel !== false;
-  const disableVideoLoop = viewerConfig.disableVideoLoop !== false;
-  const lastReelMessage = viewerConfig.lastReelMessage || "That's the last one.";
+  var lockScroll = viewerConfig.lockScroll !== false;
+  var preventScrollKeys = viewerConfig.preventScrollKeys !== false;
+  var blockNextReel = viewerConfig.blockNextReel !== false;
+  var disableVideoLoop = viewerConfig.disableVideoLoop !== false;
+  var lastReelMessage = viewerConfig.lastReelMessage || "That's the last one.";
 
   var isViewerModeActive = false;
   var currentViewerMediaId = null;
   var lastDirectPath = '/direct/inbox/';
   var isNavigatingBackFromNextReel = false;
   var isHandlingBlocked = false;
+
+  var currentViewerUser = null;
 
   function cleanPath(pathname) {
     if (!pathname) return '/';
@@ -54,11 +56,21 @@
 
   function extractMediaInfo(path) {
     var clean = cleanPath(path);
-    var match = clean.match(/^\/(reel|reels|p)\/([^/]+)/);
-    if (match) {
+    var reelMatch = clean.match(/^\/(reel|reels|p)\/([^/]+)/);
+    if (reelMatch) {
       return {
-        type: match[1],
-        id: match[2],
+        type: reelMatch[1],
+        id: reelMatch[2],
+        username: null,
+        path: clean
+      };
+    }
+    var storyMatch = clean.match(/^\/stories\/([^/]+)(?:\/([^/]+))?/);
+    if (storyMatch && storyMatch[1] !== 'create') {
+      return {
+        type: 'story',
+        username: storyMatch[1],
+        id: storyMatch[2] || storyMatch[1],
         path: clean
       };
     }
@@ -116,6 +128,7 @@
           isViewer: isViewer,
           mediaId: mediaInfo ? mediaInfo.id : null,
           mediaType: mediaInfo ? mediaInfo.type : null,
+          username: mediaInfo ? mediaInfo.username : null,
           path: mediaInfo ? mediaInfo.path : window.location.pathname,
           lastDirectPath: lastDirectPath || '/direct/inbox/'
         });
@@ -134,6 +147,34 @@
         });
       }
     } catch (e) {}
+  }
+
+  function notifyNextStoryUserBlocked(blockedUser, currentUser) {
+    console.warn('[ZeroScroll Viewer] Blocked transition to next story user:', blockedUser);
+    try {
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onNextStoryUserBlocked', {
+          blockedUser: blockedUser,
+          currentUser: currentUser,
+          message: "Story ended. ZeroScroll blocks advancing to other accounts."
+        });
+      }
+    } catch (e) {}
+  }
+
+  function closeViewerMode() {
+    isViewerModeActive = false;
+    currentViewerMediaId = null;
+    currentViewerUser = null;
+    applyScrollLock(false);
+    applyViewerCss(false);
+    hideReplayOverlay();
+    notifyViewerModeChanged(false, null);
+    if (lastDirectPath && lastDirectPath.indexOf('/direct/') === 0) {
+      window.location.replace(lastDirectPath);
+    } else {
+      window.history.back();
+    }
   }
 
   function blockNavigation(targetPath) {
@@ -338,10 +379,20 @@
         // Entering viewer mode
         isViewerModeActive = true;
         currentViewerMediaId = mediaInfo ? mediaInfo.id : null;
+        currentViewerUser = mediaInfo ? mediaInfo.username : null;
         applyScrollLock(true);
         applyViewerCss(true);
         scanVideos();
         notifyViewerModeChanged(true, mediaInfo);
+      } else if (mediaInfo && mediaInfo.type === 'story') {
+        if (currentViewerUser && mediaInfo.username !== currentViewerUser) {
+          notifyNextStoryUserBlocked(mediaInfo.username, currentViewerUser);
+          closeViewerMode();
+          return false;
+        } else {
+          currentViewerMediaId = mediaInfo.id;
+          return true;
+        }
       } else if (blockNextReel && mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
         // Moving to a DIFFERENT reel while in viewer mode
         if (!isNavigatingBackFromNextReel) {
@@ -360,6 +411,7 @@
         // Exiting viewer mode
         isViewerModeActive = false;
         currentViewerMediaId = null;
+        currentViewerUser = null;
         applyScrollLock(false);
         applyViewerCss(false);
         hideReplayOverlay();
@@ -390,11 +442,19 @@
             blockNavigation(targetPath);
             return;
           }
-          if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+          if (isViewerModeActive && isViewerModePath(targetPath)) {
             var mediaInfo = extractMediaInfo(targetPath);
-            if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
-              notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
-              return;
+            if (mediaInfo) {
+              if (mediaInfo.type === 'story') {
+                if (currentViewerUser && mediaInfo.username !== currentViewerUser) {
+                  notifyNextStoryUserBlocked(mediaInfo.username, currentViewerUser);
+                  closeViewerMode();
+                  return;
+                }
+              } else if (blockNextReel && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+                notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+                return;
+              }
             }
           }
         }
@@ -416,11 +476,19 @@
             blockNavigation(targetPath);
             return;
           }
-          if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+          if (isViewerModeActive && isViewerModePath(targetPath)) {
             var mediaInfo = extractMediaInfo(targetPath);
-            if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
-              notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
-              return;
+            if (mediaInfo) {
+              if (mediaInfo.type === 'story') {
+                if (currentViewerUser && mediaInfo.username !== currentViewerUser) {
+                  notifyNextStoryUserBlocked(mediaInfo.username, currentViewerUser);
+                  closeViewerMode();
+                  return;
+                }
+              } else if (blockNextReel && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+                notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+                return;
+              }
             }
           }
         }
@@ -455,13 +523,23 @@
           blockNavigation(targetPath);
           return;
         }
-        if (isViewerModeActive && blockNextReel && isViewerModePath(targetPath)) {
+        if (isViewerModeActive && isViewerModePath(targetPath)) {
           var mediaInfo = extractMediaInfo(targetPath);
-          if (mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
-            return;
+          if (mediaInfo) {
+            if (mediaInfo.type === 'story') {
+              if (currentViewerUser && mediaInfo.username !== currentViewerUser) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                notifyNextStoryUserBlocked(mediaInfo.username, currentViewerUser);
+                closeViewerMode();
+                return;
+              }
+            } else if (blockNextReel && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+              return;
+            }
           }
         }
       }
@@ -519,16 +597,35 @@
         }
       }
     } catch (e) {}
+  // --- REELS OFF PLACEHOLDER DECORATION ---
+  function insertReelPlaceholders() {
+    if (isPathAllowed('/reel/placeholder_check/')) {
+      return;
+    }
+    try {
+      var reelLinks = document.querySelectorAll("a[href*='/reel/']:not([data-zs-placeholder]), a[href*='/reels/']:not([data-zs-placeholder])");
+      for (var i = 0; i < reelLinks.length; i++) {
+        var a = reelLinks[i];
+        a.setAttribute('data-zs-placeholder', 'true');
+        var placeholder = document.createElement('div');
+        placeholder.className = 'zeroscroll-reel-placeholder';
+        placeholder.setAttribute('style', 'display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;background:#262626;border-radius:10px;color:#8e8e8e;font-size:12px;font-weight:500;border:1px solid #363636;margin:4px 0;cursor:pointer;');
+        placeholder.innerHTML = '<span>🎬 Reel hidden by ZeroScroll</span>';
+        a.appendChild(placeholder);
+      }
+    } catch (e) {}
   }
 
   // --- DOM MutationObserver ---
   function setupMutationObserver() {
     checkCurrentLocation();
     applyCss();
+    insertReelPlaceholders();
 
     var observer = new MutationObserver(function() {
       checkCurrentLocation();
       applyCss();
+      insertReelPlaceholders();
       if (isViewerModeActive) {
         applyScrollLock(true);
         applyViewerCss(true);
@@ -551,6 +648,71 @@
     }
   }
 
+  // --- HOT-RELOAD SUPPORT ---
+  window.__ZEROSCROLL_UPDATE_CONFIG__ = function(newConfig) {
+    if (!newConfig || typeof newConfig !== 'object') {
+      return false;
+    }
+    try {
+      console.log('[ZeroScroll Guard] Hot-reloading route config, version:', newConfig.version);
+      window.__ZEROSCROLL_CONFIG__ = Object.freeze(newConfig);
+      config = newConfig;
+
+      if (newConfig.fallbackPath) {
+        fallbackPath = newConfig.fallbackPath;
+      }
+      if (newConfig.allowedPaths && Array.isArray(newConfig.allowedPaths)) {
+        allowedPatterns = newConfig.allowedPaths.map(function(p) {
+          return new RegExp(p);
+        });
+      }
+      if (newConfig.alwaysBlockedPaths && Array.isArray(newConfig.alwaysBlockedPaths)) {
+        blockedPatterns = newConfig.alwaysBlockedPaths.map(function(p) {
+          return new RegExp(p);
+        });
+      }
+      if (newConfig.hideSelectors && Array.isArray(newConfig.hideSelectors)) {
+        hideSelectors = newConfig.hideSelectors;
+      }
+      customCss = newConfig.extraCss || newConfig.customCss || '';
+
+      var vCfg = newConfig.viewerModeRules || newConfig.viewerConfig || {};
+      viewerConfig = vCfg;
+      viewerEnabled = vCfg.enabled !== false;
+      if (vCfg.pathPatterns && Array.isArray(vCfg.pathPatterns)) {
+        viewerPatterns = vCfg.pathPatterns.map(function(p) {
+          return new RegExp(p);
+        });
+      }
+      if (vCfg.hideSelectors && Array.isArray(vCfg.hideSelectors)) {
+        viewerHideSelectors = vCfg.hideSelectors;
+      }
+      if (vCfg.scrollContainerSelectors && Array.isArray(vCfg.scrollContainerSelectors)) {
+        viewerScrollSelectors = vCfg.scrollContainerSelectors;
+      }
+      if (typeof vCfg.lockScroll === 'boolean') lockScroll = vCfg.lockScroll;
+      if (typeof vCfg.preventScrollKeys === 'boolean') preventScrollKeys = vCfg.preventScrollKeys;
+      if (typeof vCfg.blockNextReel === 'boolean') blockNextReel = vCfg.blockNextReel;
+      if (typeof vCfg.disableVideoLoop === 'boolean') disableVideoLoop = vCfg.disableVideoLoop;
+      if (vCfg.lastReelMessage) lastReelMessage = vCfg.lastReelMessage;
+
+      // Re-apply updated CSS immediately
+      applyCss();
+
+      if (isViewerModeActive) {
+        applyViewerCss(true);
+        applyScrollLock(lockScroll);
+      }
+
+      // Check current location against updated rules
+      checkCurrentLocation();
+      return true;
+    } catch (err) {
+      console.error('[ZeroScroll Guard] Failed to hot-reload configuration:', err);
+      return false;
+    }
+  };
+
   // Initial run
   checkCurrentLocation();
   applyCss();
@@ -559,6 +721,7 @@
   // Periodic safety check
   setInterval(function() {
     checkCurrentLocation();
+    insertReelPlaceholders();
     if (isViewerModeActive) {
       scanVideos();
     }

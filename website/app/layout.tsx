@@ -3,8 +3,16 @@ import "./globals.css";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+  ? process.env.NEXT_PUBLIC_SITE_URL
+  : process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "http://localhost:3000";
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://zoomschool.app"),
+  metadataBase: new URL(siteUrl),
   title: "ZeroScroll - DMs without the feed",
   description:
     "ZeroScroll is an Android app that shows only your Instagram DMs and notifications, with no feed, Search, Reels tab, or Stories.",
@@ -17,7 +25,6 @@ export const metadata: Metadata = {
     title: "ZeroScroll - DMs without the feed",
     description:
       "ZeroScroll is an Android app that shows only your Instagram DMs and notifications, with no feed, Search, Reels tab, or Stories.",
-    url: process.env.NEXT_PUBLIC_SITE_URL || "https://zoomschool.app",
     siteName: "ZeroScroll",
     images: [
       {

@@ -4,8 +4,9 @@
 
 **ZeroScroll** is an Android-first Flutter application that displays **ONLY** the Direct Messages and Notifications/Activity area of the user's own account inside a guarded WebView.
 - **Allowed views:** Direct Messages (inbox & conversations) and Notifications/Activity.
-- **Blocked/Removed:** Home feed, Search/Explore, Reels tab, Stories, and general profile browsing.
+- **Blocked/Removed:** Home feed, Search/Explore, Reels tab, and general profile browsing.
 - **Media constraints:** Reels/posts sent in DMs can be viewed one at a time, strictly with no swiping or continuous scrolling to further content.
+- **Stories (Optional & Default-Off):** Stories are strictly OFF by default. When explicitly enabled by the user, Stories follow the same mindful philosophy as reels: single-user session lock (no advancing or swiping across accounts), daily story budgets, reply friction delays, persistent Close button, and fail-closed isolation from algorithmic home feeds.
 
 ---
 

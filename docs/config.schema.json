@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zeroscroll.app/schemas/config.schema.json",
+  "title": "ZeroScroll Remote Configuration Schema",
+  "description": "Defines route guard patterns, CSS injection, single item viewer constraints, and emergency kill switch settings.",
+  "type": "object",
+  "required": [
+    "version",
+    "userAgent",
+    "fallbackPath",
+    "allowedPaths",
+    "alwaysBlockedPaths",
+    "hideSelectors"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing configuration version number."
+    },
+    "minAppVersion": {
+      "type": "string",
+      "description": "Minimum client application semver required to apply this configuration (e.g. 1.0.0).",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+.*$"
+    },
+    "killSwitch": {
+      "type": "object",
+      "description": "Emergency pause switch for the app when Meta/Instagram DOM changes break guardrails.",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, WebView is not loaded and a full-screen pause notice is displayed."
+        },
+        "message": {
+          "type": "string",
+          "description": "Friendly user-facing explanation message displayed on the pause screen."
+        }
+      },
+      "additionalProperties": false
+    },
+    "userAgent": {
+      "type": "string",
+      "description": "Mobile Chrome User Agent string for WebView requests."
+    },
+    "fallbackPath": {
+      "type": "string",
+      "description": "Internal route path to redirect to upon encountering prohibited navigation.",
+      "pattern": "^/.*"
+    },
+    "allowedPaths": {
+      "type": "array",
+      "description": "Regular expression patterns matching permitted paths (DMs, login, activity, single media).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alwaysBlockedPaths": {
+      "type": "array",
+      "description": "Regular expression patterns matching strictly prohibited paths (feeds, explore, reels tab, profiles).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hideSelectors": {
+      "type": "array",
+      "description": "CSS selectors targeted for permanent visual suppression (display: none !important).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extraCss": {
+      "type": "string",
+      "description": "Sanitized supplementary CSS stylesheet. Must not contain url(), @import, expression(), or script vectors."
+    },
+    "customCss": {
+      "type": "string",
+      "description": "Backward-compatible alias for extraCss."
+    },
+    "viewerModeRules": {
+      "$ref": "#/$defs/viewerModeRules"
+    },
+    "viewerConfig": {
+      "$ref": "#/$defs/viewerModeRules"
+    },
+    "featureGroups": {
+      "type": "object",
+      "description": "Modular feature groups governing path permissions and CSS selectors per feature.",
+      "additionalProperties": {
+        "$ref": "#/$defs/featureGroup"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "viewerModeRules": {
+      "type": "object",
+      "description": "Rules governing single media viewer mode for isolated post/reel inspection.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "pathPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hideSelectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scrollContainerSelectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lockScroll": {
+          "type": "boolean",
+          "default": true
+        },
+        "preventScrollKeys": {
+          "type": "boolean",
+          "default": true
+        },
+        "blockNextReel": {
+          "type": "boolean",
+          "default": true
+        },
+        "disableVideoLoop": {
+          "type": "boolean",
+          "default": true
+        },
+        "lastReelMessage": {
+          "type": "string",
+          "default": "That's the last one."
+        }
+      },
+      "additionalProperties": false
+    },
+    "featureGroup": {
+      "type": "object",
+      "description": "Rules associated with a specific feature group.",
+      "properties": {
+        "allowedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blockedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hideSelectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -3,6 +3,9 @@ abstract class ZeroScrollWebViewController {
   /// Loads the Direct Messages inbox.
   Future<void> loadInbox();
 
+  /// Loads a specific Direct Message thread by thread ID.
+  Future<void> loadThread(String threadId);
+
   /// Loads the Notifications and Activity view.
   Future<void> loadNotifications();
 

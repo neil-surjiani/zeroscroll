@@ -6,6 +6,9 @@ enum ShellTab {
   /// Activity feed & notifications.
   notifications,
 
+  /// Stories tray (available only in fromFollowing mode).
+  stories,
+
   /// App settings, preferences, and account actions.
   settings,
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../remote_config/presentation/providers/remote_config_provider.dart';
+import '../../../webview/presentation/providers/webview_controller_provider.dart';
 import '../providers/debug_log_provider.dart';
 
 /// Hidden developer diagnostic panel.
@@ -32,10 +34,29 @@ class _DebugScreenState extends ConsumerState<DebugScreen>
     final debugState = ref.watch(debugLogProvider);
     final theme = Theme.of(context);
 
+    final repo = ref.watch(routeConfigRepositoryProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Developer Debug Panel'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.radar_outlined),
+            tooltip: 'Probe Posting Capability',
+            onPressed: () => _probePostingCapability(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh Remote Config',
+            onPressed: () async {
+              await repo.refreshConfig();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Remote configuration refreshed')),
+                );
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Clear Logs',
@@ -74,7 +95,7 @@ class _DebugScreenState extends ConsumerState<DebugScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Config Version: ${debugState.configVersion}',
+                      'Config Version: ${debugState.configVersion} (${repo.currentSource.name})',
                       style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.primary,
@@ -87,6 +108,16 @@ class _DebugScreenState extends ConsumerState<DebugScreen>
                     ),
                   ],
                 ),
+                if (repo.lastFetchError != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Remote Error: ${repo.lastFetchError}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   'Current URL: ${debugState.currentUrl ?? "None"}',
@@ -202,5 +233,64 @@ class _DebugScreenState extends ConsumerState<DebugScreen>
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> _probePostingCapability(BuildContext context) async {
+    final controller = ref.read(webViewControllerProvider);
+    final buffer = StringBuffer('=== Story Posting Capability Probe ===\n');
+
+    if (controller == null) {
+      buffer.writeln('WebViewController is not currently attached.');
+    } else {
+      try {
+        final probeResult = await controller.evaluateJs(
+          '''
+            (function() {
+              var results = {};
+              results.hasMediaDevices = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+              results.hasFileInput = !!document.querySelector("input[type='file']");
+              results.hasCaptureSupport = 'capture' in document.createElement('input');
+              results.cookieEnabled = navigator.cookieEnabled;
+              results.userAgent = navigator.userAgent;
+              return JSON.stringify(results);
+            })();
+          ''',
+        );
+        buffer.writeln('Mobile Web Capabilities:\n$probeResult');
+      } catch (e) {
+        buffer.writeln('JS Probe Error: $e');
+      }
+    }
+
+    final report = buffer.toString();
+    ref.read(debugLogProvider.notifier).addConsoleLog(report, 'INFO');
+
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Posting Capability Probe'),
+          content: SingleChildScrollView(
+            child: Text(
+              report,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: report));
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Copy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }

@@ -1,0 +1,84 @@
+{
+  "version": 2,
+  "minAppVersion": "1.0.0",
+  "killSwitch": {
+    "enabled": false,
+    "message": "ZeroScroll is paused while we fix an Instagram change"
+  },
+  "userAgent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+  "fallbackPath": "/direct/inbox/",
+  "allowedPaths": [
+    "^/direct/",
+    "^/accounts/login",
+    "^/accounts/activity",
+    "^/accounts/onetap",
+    "^/challenge/",
+    "^/two_factor/",
+    "^/accounts/suspended",
+    "^/reel/[^/]+/?$",
+    "^/reels/[^/]+/?$",
+    "^/p/[^/]+/?$"
+  ],
+  "alwaysBlockedPaths": [
+    "^/$",
+    "^/explore",
+    "^/reels/?$",
+    "^/stories/",
+    "^/accounts/edit",
+    "^/(?!direct|accounts|challenge|two_factor|reel|reels|p|legal|static)[a-zA-Z0-9._]+/?$"
+  ],
+  "hideSelectors": [
+    "a[href='/']",
+    "a[href^='/explore']",
+    "a[href^='/reels']",
+    "a[aria-label='Home']",
+    "a[aria-label='Search']",
+    "a[aria-label='Explore']",
+    "a[aria-label='Reels']",
+    "section[aria-label='Stories']",
+    "div[aria-label*='Stories']",
+    "div[data-testid='story-tray']",
+    "div[data-testid='mobile-top-nav']",
+    "div[data-testid='mobile-nav']",
+    "div[role='tablist'] a[href='/']",
+    "div[role='tablist'] a[href^='/explore']",
+    "div[role='tablist'] a[href^='/reels']",
+    "div:has(> a[href*='play.google.com'])",
+    "div:has(> a[href*='apps.apple.com'])",
+    "div[role='banner']",
+    "div[data-testid='app-upsell']"
+  ],
+  "extraCss": "/* ZeroScroll Enhanced Remote Rules v2 */\na[href='/'], a[href^='/explore'], a[href^='/reels'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'] { display: none !important; }",
+  "viewerModeRules": {
+    "enabled": true,
+    "pathPatterns": [
+      "^/reel/[^/]+/?$",
+      "^/reels/[^/]+/?$",
+      "^/p/[^/]+/?$"
+    ],
+    "hideSelectors": [
+      "a[href*='/comments/']",
+      "div[aria-label*='Comments']",
+      "button[aria-label*='Next']",
+      "div[aria-label*='Next']",
+      "a[aria-label*='Next']",
+      "div[aria-label*='Suggested']",
+      "div:has(> *[aria-label*='More from'])",
+      "div[aria-label*='More reels']",
+      "div[aria-label*='More posts']",
+      "header a[role='link']",
+      "a[role='link']:has(img[alt*='profile'])"
+    ],
+    "scrollContainerSelectors": [
+      "main",
+      "[role='main']",
+      "article",
+      "div[data-pressable-container='true']"
+    ],
+    "lockScroll": true,
+    "preventScrollKeys": true,
+    "blockNextReel": true,
+    "disableVideoLoop": true,
+    "lastReelMessage": "That's the last one."
+  }
+}

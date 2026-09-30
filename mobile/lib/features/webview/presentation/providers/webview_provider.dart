@@ -10,12 +10,16 @@ class WebviewState {
     this.isOffline = false,
     this.isSslError = false,
     this.hasHttpError = false,
+    this.isGuardFailed = false,
     this.httpStatusCode,
     this.errorMessage,
     this.canGoBack = false,
     this.currentUrl,
     this.currentMediaId,
+    this.currentViewerUsername,
+    this.mediaType,
     this.showBudgetReached = false,
+    this.showStoryBudgetReached = false,
     this.lastDirectPath = '/direct/inbox/',
   });
 
@@ -25,16 +29,22 @@ class WebviewState {
   final bool isOffline;
   final bool isSslError;
   final bool hasHttpError;
+  final bool isGuardFailed;
   final int? httpStatusCode;
   final String? errorMessage;
   final bool canGoBack;
   final String? currentUrl;
   final String? currentMediaId;
+  final String? currentViewerUsername;
+  final String? mediaType;
   final bool showBudgetReached;
+  final bool showStoryBudgetReached;
   final String lastDirectPath;
 
-  bool get hasAnyError => isOffline || isSslError || hasHttpError;
+  bool get hasAnyError =>
+      isOffline || isSslError || hasHttpError || isGuardFailed;
   bool get isViewerMode => mode == WebviewMode.singleMediaViewer;
+  bool get isStoryViewer => isViewerMode && mediaType == 'story';
 
   WebviewState copyWith({
     WebviewMode? mode,
@@ -43,12 +53,16 @@ class WebviewState {
     bool? isOffline,
     bool? isSslError,
     bool? hasHttpError,
+    bool? isGuardFailed,
     int? httpStatusCode,
     String? errorMessage,
     bool? canGoBack,
     String? currentUrl,
     String? currentMediaId,
+    String? currentViewerUsername,
+    String? mediaType,
     bool? showBudgetReached,
+    bool? showStoryBudgetReached,
     String? lastDirectPath,
     bool resetErrors = false,
     bool resetMediaId = false,
@@ -60,6 +74,8 @@ class WebviewState {
       isOffline: resetErrors ? false : (isOffline ?? this.isOffline),
       isSslError: resetErrors ? false : (isSslError ?? this.isSslError),
       hasHttpError: resetErrors ? false : (hasHttpError ?? this.hasHttpError),
+      isGuardFailed:
+          resetErrors ? false : (isGuardFailed ?? this.isGuardFailed),
       httpStatusCode: resetErrors
           ? null
           : (httpStatusCode ?? this.httpStatusCode),
@@ -69,7 +85,13 @@ class WebviewState {
       currentMediaId: resetMediaId
           ? null
           : (currentMediaId ?? this.currentMediaId),
+      currentViewerUsername: resetMediaId
+          ? null
+          : (currentViewerUsername ?? this.currentViewerUsername),
+      mediaType: resetMediaId ? null : (mediaType ?? this.mediaType),
       showBudgetReached: showBudgetReached ?? this.showBudgetReached,
+      showStoryBudgetReached:
+          showStoryBudgetReached ?? this.showStoryBudgetReached,
       lastDirectPath: lastDirectPath ?? this.lastDirectPath,
     );
   }
@@ -86,6 +108,8 @@ class WebviewNotifier extends StateNotifier<WebviewState> {
   void setViewerMode({
     required bool isViewer,
     String? mediaId,
+    String? mediaType,
+    String? username,
     String? lastDirectPath,
   }) {
     state = state.copyWith(
@@ -93,14 +117,22 @@ class WebviewNotifier extends StateNotifier<WebviewState> {
           ? WebviewMode.singleMediaViewer
           : WebviewMode.directMessages,
       currentMediaId: mediaId,
+      currentViewerUsername: username,
+      mediaType: mediaType,
       resetMediaId: !isViewer,
       showBudgetReached: !isViewer ? false : state.showBudgetReached,
+      showStoryBudgetReached:
+          !isViewer ? false : state.showStoryBudgetReached,
       lastDirectPath: lastDirectPath ?? state.lastDirectPath,
     );
   }
 
   void setBudgetReached(bool reached) {
     state = state.copyWith(showBudgetReached: reached);
+  }
+
+  void setStoryBudgetReached(bool reached) {
+    state = state.copyWith(showStoryBudgetReached: reached);
   }
 
   void onLoadStart(String? url) {
@@ -151,6 +183,14 @@ class WebviewNotifier extends StateNotifier<WebviewState> {
       hasHttpError: true,
       httpStatusCode: statusCode,
       errorMessage: description ?? 'Received HTTP error ($statusCode).',
+    );
+  }
+
+  void onGuardFailure([String? description]) {
+    state = state.copyWith(
+      isLoading: false,
+      isGuardFailed: true,
+      errorMessage: description ?? 'Security guard injection could not be verified.',
     );
   }
 

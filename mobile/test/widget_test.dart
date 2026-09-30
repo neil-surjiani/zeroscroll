@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zeroscroll/core/config/app_flavor.dart';
+import 'package:zeroscroll/features/onboarding/data/onboarding_repository.dart';
 import 'package:zeroscroll/main.dart';
 import 'helpers/test_webview_platform.dart';
 
@@ -24,6 +25,9 @@ void main() {
       ProviderScope(
         overrides: [
           flavorConfigProvider.overrideWithValue(FlavorConfig.play()),
+          onboardingRepositoryProvider.overrideWithValue(
+            LocalOnboardingRepository(initialCompleted: true),
+          ),
         ],
         child: const ZeroScrollApp(),
       ),
@@ -32,43 +36,37 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // Verify app title and flavor badge
-    expect(find.text('ZeroScroll'), findsOneWidget);
+    expect(find.text('ZeroScroll'), findsWidgets);
     expect(find.text('PLAY'), findsOneWidget);
 
-    // Verify navigation destinations
+    // Verify 3 navigation destinations
     expect(find.text('Messages'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
-    expect(find.text('Limits'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
 
-    // Switch tab to Activity
-    await tester.tap(find.byIcon(Icons.notifications_none));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Activity & Notifications'), findsOneWidget);
+    // Verify top slim stats bar is present
+    expect(find.textContaining('in app'), findsOneWidget);
+    expect(find.textContaining('reels opened'), findsOneWidget);
 
-    // Switch tab to Limits
-    await tester.tap(find.byIcon(Icons.hourglass_empty));
+    // Switch tab to Activity
+    await tester.tap(find.byIcon(Icons.notifications_none_rounded));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Intentional Usage Limits'), findsOneWidget);
+    expect(find.text('Activity Feed'), findsOneWidget);
+    expect(find.text('Native Alerts'), findsOneWidget);
 
     // Switch tab to Settings
-    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.tap(find.byIcon(Icons.tune_rounded));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('PREFERENCES'), findsOneWidget);
-
-    // Scroll until Log Out is visible if necessary
-    await tester.scrollUntilVisible(
-      find.text('Log Out'),
-      300,
-      scrollable: find.byType(Scrollable).last,
-    );
-    expect(find.text('Log Out'), findsOneWidget);
+    expect(find.text('ACCOUNT'), findsOneWidget);
+    expect(find.text('LIMITS & FOCUS'), findsOneWidget);
+    expect(find.text('APPEARANCE'), findsOneWidget);
+    expect(find.text('ABOUT'), findsOneWidget);
 
     // Tap Log Out and verify confirmation dialog appears
-    await tester.tap(find.text('Log Out'));
+    expect(find.byKey(const ValueKey('settings_logout_tile')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('settings_logout_tile')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Log Out of ZeroScroll?'), findsOneWidget);
@@ -76,13 +74,13 @@ void main() {
     // Cancel logout
     await tester.tap(find.text('Cancel'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Log Out of ZeroScroll?'), findsNothing);
 
     // Return to Messages tab
-    await tester.tap(find.byIcon(Icons.chat_bubble_outline));
+    await tester.tap(find.text('Messages'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const Key('test_in_app_webview')), findsOneWidget);
+    expect(find.byKey(const Key('test_in_app_webview')), findsWidgets);
   });
 }

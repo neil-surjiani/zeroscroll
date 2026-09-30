@@ -1,0 +1,7 @@
+# ZeroScroll Release Keystore Configuration Template
+# DO NOT COMMIT key.properties TO VERSION CONTROL.
+# Copy this file to mobile/android/key.properties and fill in your secrets.
+storePassword=your_keystore_password_here
+keyPassword=your_key_password_here
+keyAlias=zeroscroll
+storeFile=release.keystore

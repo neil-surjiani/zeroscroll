@@ -15,7 +15,7 @@ Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**, desig
   4. "What it blocks" (Home feed, Search/Explore, Reels tab, Stories, Profile browsing)
   5. "Privacy" (On-device data, zero ads, zero trackers, zero analytics)
   6. Short FAQ (4 key user questions)
-  7. Footer with Privacy, Terms, contact email, and non-affiliation disclaimer
+  7. Footer with Privacy, Terms, and non-affiliation disclaimer
 - **Dedicated Pages**:
   - `/privacy`: Plain-language privacy manifesto
   - `/terms`: Terms of service, disclaimer, and Indian governing law
@@ -36,8 +36,6 @@ The website is configured using the following environment variables:
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_APK_URL` | Direct download link for the Android `.apk` binary | `https://github.com/apexventures/zeroscroll/releases/latest/download/zeroscroll.apk` |
 | `NEXT_PUBLIC_APP_VERSION` | Version label displayed on download badges | `v1.0.0` |
-| `NEXT_PUBLIC_SITE_URL` | Primary website domain | `https://zoomschool.app` |
-| `NEXT_PUBLIC_CONTACT_EMAIL` | Support & legal contact email | `contact@zoomschool.app` |
 
 Copy the example file to create your local environment:
 ```bash

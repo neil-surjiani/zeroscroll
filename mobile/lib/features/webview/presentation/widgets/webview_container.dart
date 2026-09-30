@@ -1,13 +1,18 @@
 import 'dart:collection';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../limits/presentation/providers/limits_state_provider.dart';
 import '../../../limits/presentation/providers/reel_budget_provider.dart';
-import '../../../remote_config/data/remote_config_repository.dart';
-import '../../../remote_config/domain/route_config.dart';
+import '../../../limits/presentation/providers/story_budget_provider.dart';
+import '../../../limits/presentation/widgets/reply_friction_dialog.dart';
+import '../../../remote_config/presentation/providers/remote_config_provider.dart';
 import '../../../security/presentation/providers/debug_log_provider.dart';
+import '../../../settings/domain/feature_preferences.dart';
+import '../../../settings/presentation/providers/feature_preferences_provider.dart';
 import '../../data/webview_constants.dart';
 import '../../data/zero_scroll_web_view_controller_impl.dart';
 import '../../domain/webview_mode.dart';
@@ -21,10 +26,12 @@ class WebviewContainer extends ConsumerStatefulWidget {
     super.key,
     this.initialUrl = WebViewConstants.directInboxUrl,
     this.customUserAgent,
+    this.isMainInbox = true,
   });
 
   final String initialUrl;
   final String? customUserAgent;
+  final bool isMainInbox;
 
   @override
   ConsumerState<WebviewContainer> createState() => _WebviewContainerState();
@@ -43,51 +50,13 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
     super.build(context);
     final webviewState = ref.watch(webviewNotifierProvider);
     final todayReelCount = ref.watch(todayReelCountProvider);
+    final todayStoryCount = ref.watch(todayStoryCountProvider);
+    final featurePrefs = ref.watch(featurePreferencesProvider);
     final theme = Theme.of(context);
 
-    // Watch RouteConfig and Guard JS assets
-    final routeConfigAsync = ref.watch(routeConfigProvider);
+    // Watch Effective RouteConfig and Guard JS assets
+    final config = ref.watch(effectiveRouteConfigProvider);
     final guardJsAsync = ref.watch(guardJsProvider);
-
-    final config =
-        routeConfigAsync.valueOrNull ??
-        const RouteConfig(
-          version: 1,
-          userAgent: WebViewConstants.defaultUserAgent,
-          fallbackPath: '/direct/inbox/',
-          allowedPaths: [
-            r'^/direct/',
-            r'^/accounts/login',
-            r'^/accounts/activity',
-            r'^/accounts/onetap',
-            r'^/challenge/',
-            r'^/two_factor/',
-            r'^/accounts/suspended',
-            r'^/reel/[^/]+/?$',
-            r'^/reels/[^/]+/?$',
-            r'^/p/[^/]+/?$',
-          ],
-          alwaysBlockedPaths: [
-            r'^/$',
-            r'^/explore',
-            r'^/reels/?$',
-            r'^/stories/',
-            r'^/accounts/edit',
-            r'^/(?!direct|accounts|challenge|two_factor|reel|reels|p|legal|static)[a-zA-Z0-9._]+/?$',
-          ],
-          hideSelectors: [
-            "a[href='/']",
-            "a[href^='/explore']",
-            "a[href^='/reels']",
-            "a[aria-label='Home']",
-            "a[aria-label='Search']",
-            "a[aria-label='Reels']",
-            "section[aria-label='Stories']",
-            "div[aria-label*='Stories']",
-            "div[data-testid='story-tray']",
-          ],
-        );
-
     final guardJs = guardJsAsync.valueOrNull ?? '';
     final userAgent =
         widget.customUserAgent ??
@@ -99,6 +68,44 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(debugLogProvider.notifier).setConfigVersion(config.version);
     });
+
+    // Listen for effective config updates to perform live hot-reloading
+    ref.listen<RouteConfig>(effectiveRouteConfigProvider, (previous, next) async {
+      if (_rawController != null) {
+        await _rawController!.evaluateJavascript(
+          source: '''
+            if (typeof window.__ZEROSCROLL_UPDATE_CONFIG__ === 'function') {
+              window.__ZEROSCROLL_UPDATE_CONFIG__(${next.toJsonString()});
+            }
+          ''',
+        );
+        final currentUrl = await _rawController!.getUrl();
+        if (currentUrl != null && !next.isPathAllowed(currentUrl.path)) {
+          await _rawController!.loadUrl(
+            urlRequest: URLRequest(url: WebUri(next.fallbackPath)),
+          );
+        }
+      }
+    });
+
+    // Requirement 6: If kill switch is enabled, show friendly message and DO NOT load WebView
+    if (config.killSwitch.enabled) {
+      return KillSwitchOverlay(
+        message: config.killSwitch.message,
+        onRetry: () => ref.read(routeConfigRepositoryProvider).refreshConfig(),
+      );
+    }
+
+    // Fail-Closed: If guard JS failed to load from assets, disable WebView
+    if (guardJsAsync.hasError) {
+      return Scaffold(
+        body: _GuardFailedOverlay(
+          onRetry: () => ref.refresh(guardJsProvider),
+          errorMessage:
+              'Guard script asset could not be loaded from app bundle. Fail-closed protection active.',
+        ),
+      );
+    }
 
     final isViewerMode = webviewState.mode == WebviewMode.singleMediaViewer;
 
@@ -153,12 +160,14 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               transparentBackground: false,
               supportMultipleWindows: false,
               allowsInlineMediaPlayback: true,
+              isInspectable: kDebugMode,
             ),
             onWebViewCreated: (controller) {
               _rawController = controller;
               final wrapper = ZeroScrollWebViewControllerImpl(controller);
-              _controllerWrapper = wrapper;
-              ref.read(webViewControllerProvider.notifier).state = wrapper;
+              if (widget.isMainInbox) {
+                ref.read(webViewControllerProvider.notifier).state = wrapper;
+              }
 
               // Register JavaScript bridge for Layer 2 blocked toast notifications
               controller.addJavaScriptHandler(
@@ -185,27 +194,61 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       : null;
                   final isViewer = data?['isViewer'] as bool? ?? false;
                   final mediaId = data?['mediaId']?.toString();
+                  final mediaType = data?['mediaType']?.toString();
+                  final username = data?['username']?.toString();
                   final lastDirectPath = data?['lastDirectPath']?.toString();
 
                   if (isViewer) {
-                    final canOpen = await ref
-                        .read(reelBudgetServiceProvider)
-                        .canOpenReel();
-                    if (!canOpen) {
-                      ref
-                          .read(webviewNotifierProvider.notifier)
-                          .setBudgetReached(true);
-                      await controller.evaluateJavascript(
-                        source:
-                            'var v = document.querySelector("video"); if (v) v.pause();',
-                      );
+                    if (!context.mounted) return;
+                    final limitsConfig = ref.read(limitsConfigProvider).valueOrNull;
+                    if (limitsConfig != null && limitsConfig.isReplyFrictionEnabled) {
+                      final canProceed = await ReplyFrictionDialog.show(context, ref);
+                      if (!canProceed) {
+                        await _closeViewerModeAndReturnToDirect();
+                        return;
+                      }
+                    }
+
+                    if (mediaType == 'story') {
+                      final canOpen = await ref
+                          .read(storyBudgetServiceProvider)
+                          .canOpenStory();
+                      if (!canOpen) {
+                        ref
+                            .read(webviewNotifierProvider.notifier)
+                            .setStoryBudgetReached(true);
+                        await controller.evaluateJavascript(
+                          source:
+                              'var v = document.querySelector("video"); if (v) v.pause();',
+                        );
+                      } else {
+                        ref
+                            .read(webviewNotifierProvider.notifier)
+                            .setStoryBudgetReached(false);
+                        await ref
+                            .read(todayStoryCountProvider.notifier)
+                            .recordStoryOpened();
+                      }
                     } else {
-                      ref
-                          .read(webviewNotifierProvider.notifier)
-                          .setBudgetReached(false);
-                      await ref
-                          .read(todayReelCountProvider.notifier)
-                          .recordReelOpened();
+                      final canOpen = await ref
+                          .read(reelBudgetServiceProvider)
+                          .canOpenReel();
+                      if (!canOpen) {
+                        ref
+                            .read(webviewNotifierProvider.notifier)
+                            .setBudgetReached(true);
+                        await controller.evaluateJavascript(
+                          source:
+                              'var v = document.querySelector("video"); if (v) v.pause();',
+                        );
+                      } else {
+                        ref
+                            .read(webviewNotifierProvider.notifier)
+                            .setBudgetReached(false);
+                        await ref
+                            .read(todayReelCountProvider.notifier)
+                            .recordReelOpened();
+                      }
                     }
                   }
 
@@ -214,6 +257,8 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       .setViewerMode(
                         isViewer: isViewer,
                         mediaId: mediaId,
+                        mediaType: mediaType,
+                        username: username,
                         lastDirectPath: lastDirectPath,
                       );
                 },
@@ -230,6 +275,20 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       data?['message']?.toString() ??
                       config.viewerConfig.lastReelMessage;
                   _showLastReelToast(message);
+                },
+              );
+
+              // Requirement 3: Handler for blocked next-story transitions (different user)
+              controller.addJavaScriptHandler(
+                handlerName: 'onNextStoryUserBlocked',
+                callback: (args) async {
+                  final data = args.isNotEmpty && args[0] is Map
+                      ? args[0] as Map
+                      : null;
+                  final message = data?['message']?.toString() ??
+                      "That was the last story from this user.";
+                  _showLastReelToast(message);
+                  await _closeViewerModeAndReturnToDirect();
                 },
               );
             },
@@ -270,6 +329,50 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                     }
                   }
 
+                  // Check if this is a story viewer path
+                  final storyInfo = _extractStoryInfo(path);
+                  if (storyInfo != null) {
+                    final currentViewerUser = ref
+                        .read(webviewNotifierProvider)
+                        .currentViewerUsername;
+                    if (currentViewerUser != null &&
+                        storyInfo.username.isNotEmpty &&
+                        currentViewerUser != storyInfo.username) {
+                      controller.stopLoading();
+                      _showLastReelToast(
+                        "That was the last story from @$currentViewerUser.",
+                      );
+                      _closeViewerModeAndReturnToDirect();
+                      return;
+                    }
+
+                    // In fromDmsOnly mode, verify story is opened from DMs
+                    if (featurePrefs.storiesViewMode ==
+                        StoriesViewMode.fromDmsOnly) {
+                      final lastDirect =
+                          ref.read(webviewNotifierProvider).lastDirectPath;
+                      final currentUrl =
+                          ref.read(webviewNotifierProvider).currentUrl;
+                      final prevPath = currentUrl != null
+                          ? (Uri.tryParse(currentUrl)?.path ?? '')
+                          : '';
+                      final isFromDm = prevPath.contains('/direct/') ||
+                          lastDirect.contains('/direct/');
+                      if (!isFromDm) {
+                        ref
+                            .read(debugLogProvider.notifier)
+                            .addBlockedNavigation(path, urlString ?? '');
+                        _showBlockedToast(path);
+                        controller.stopLoading();
+                        final fallback = WebUri(
+                          'https://${url.host}${config.fallbackPath}',
+                        );
+                        controller.loadUrl(urlRequest: URLRequest(url: fallback));
+                        return;
+                      }
+                    }
+                  }
+
                   // LAYER 1: Check in Dart on load start
                   if (!config.isPathAllowed(path)) {
                     ref
@@ -300,22 +403,52 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   .onLoadStop(urlString, canGoBack: canGoBack);
 
               // Check if loaded page is a viewer page directly
-              if (url != null && config.isViewerPath(url.path)) {
-                final canOpen = await ref
-                    .read(reelBudgetServiceProvider)
-                    .canOpenReel();
-                if (!canOpen) {
-                  ref
-                      .read(webviewNotifierProvider.notifier)
-                      .setBudgetReached(true);
-                  await controller.evaluateJavascript(
-                    source:
-                        'var v = document.querySelector("video"); if (v) v.pause();',
-                  );
+              final isStoryPage = _extractStoryInfo(url?.path ?? '') != null;
+              if (url != null && (config.isViewerPath(url.path) || isStoryPage)) {
+                if (!context.mounted) return;
+                final limitsConfig = ref.read(limitsConfigProvider).valueOrNull;
+                if (limitsConfig != null && limitsConfig.isReplyFrictionEnabled) {
+                  final canProceed = await ReplyFrictionDialog.show(context, ref);
+                  if (!canProceed) {
+                    await _closeViewerModeAndReturnToDirect();
+                    return;
+                  }
+                }
+
+                if (isStoryPage) {
+                  final canOpen = await ref
+                      .read(storyBudgetServiceProvider)
+                      .canOpenStory();
+                  if (!canOpen) {
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .setStoryBudgetReached(true);
+                    await controller.evaluateJavascript(
+                      source:
+                          'var v = document.querySelector("video"); if (v) v.pause();',
+                    );
+                  } else {
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .setStoryBudgetReached(false);
+                  }
                 } else {
-                  ref
-                      .read(webviewNotifierProvider.notifier)
-                      .setBudgetReached(false);
+                  final canOpen = await ref
+                      .read(reelBudgetServiceProvider)
+                      .canOpenReel();
+                  if (!canOpen) {
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .setBudgetReached(true);
+                    await controller.evaluateJavascript(
+                      source:
+                          'var v = document.querySelector("video"); if (v) v.pause();',
+                    );
+                  } else {
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .setBudgetReached(false);
+                  }
                 }
               }
 
@@ -328,6 +461,37 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                 })();
               ''',
               );
+
+              // Fail-closed verification: ensure the guard script initialized on the loaded page
+              if (url != null && !url.toString().contains('about:blank')) {
+                try {
+                  final guardInit = await controller.evaluateJavascript(
+                    source:
+                        'Boolean(window.__ZEROSCROLL_GUARD_INITIALIZED__ === true);',
+                  );
+                  if (guardInit == false || guardInit == 0 || guardInit == 'false') {
+                    await controller.stopLoading();
+                    await controller.loadUrl(
+                      urlRequest: URLRequest(url: WebUri('about:blank')),
+                    );
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .onGuardFailure(
+                          'Page protection guard failed to initialize. Web access disabled.',
+                        );
+                    return;
+                  }
+                } catch (e) {
+                  await controller.stopLoading();
+                  await controller.loadUrl(
+                    urlRequest: URLRequest(url: WebUri('about:blank')),
+                  );
+                  ref
+                      .read(webviewNotifierProvider.notifier)
+                      .onGuardFailure('Guard verification error: $e');
+                  return;
+                }
+              }
             },
             onReceivedError: (controller, request, error) {
               final isMainFrame = request.isForMainFrame ?? true;
@@ -343,8 +507,8 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                 final statusCode = errorResponse.statusCode ?? 500;
                 if (statusCode >= 400) {
                   ref
-                      .read(webviewNotifierProvider.notifier)
-                      .onHttpError(statusCode, errorResponse.reasonPhrase);
+                    .read(webviewNotifierProvider.notifier)
+                    .onHttpError(statusCode, errorResponse.reasonPhrase);
                 }
               }
             },
@@ -391,6 +555,48 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       currentId != targetId) {
                     _showLastReelToast(config.viewerConfig.lastReelMessage);
                     return NavigationActionPolicy.CANCEL;
+                  }
+                }
+
+                // Story viewer single-user check
+                final storyInfo = _extractStoryInfo(path);
+                if (storyInfo != null) {
+                  final currentViewerUser = ref
+                      .read(webviewNotifierProvider)
+                      .currentViewerUsername;
+                  if (currentViewerUser != null &&
+                      storyInfo.username.isNotEmpty &&
+                      currentViewerUser != storyInfo.username) {
+                    _showLastReelToast(
+                      "That was the last story from @$currentViewerUser.",
+                    );
+                    _closeViewerModeAndReturnToDirect();
+                    return NavigationActionPolicy.CANCEL;
+                  }
+
+                  if (featurePrefs.storiesViewMode ==
+                      StoriesViewMode.fromDmsOnly) {
+                    final lastDirect =
+                        ref.read(webviewNotifierProvider).lastDirectPath;
+                    final currentUrl =
+                        ref.read(webviewNotifierProvider).currentUrl;
+                    final prevPath = currentUrl != null
+                        ? (Uri.tryParse(currentUrl)?.path ?? '')
+                        : '';
+                    final isFromDm = prevPath.contains('/direct/') ||
+                        lastDirect.contains('/direct/');
+                    if (!isFromDm) {
+                      ref.read(debugLogProvider.notifier).addBlockedNavigation(
+                            path,
+                            uri.toString(),
+                          );
+                      _showBlockedToast(path);
+                      final fallback = WebUri(
+                        'https://${uri.host}${config.fallbackPath}',
+                      );
+                      controller.loadUrl(urlRequest: URLRequest(url: fallback));
+                      return NavigationActionPolicy.CANCEL;
+                    }
                   }
                 }
 
@@ -465,8 +671,17 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               onRetry: _retryLoading,
             ),
 
-          // Requirement 5: Persistent top bar overlay with Close button and today's reel count
-          if (isViewerMode && !webviewState.showBudgetReached)
+          // Fail-closed Guard Failure Overlay
+          if (webviewState.isGuardFailed)
+            _GuardFailedOverlay(
+              errorMessage: webviewState.errorMessage,
+              onRetry: _retryLoading,
+            ),
+
+          // Requirement 5: Persistent top bar overlay with Close button and today's reel/story count
+          if (isViewerMode &&
+              !webviewState.showBudgetReached &&
+              !webviewState.showStoryBudgetReached)
             Positioned(
               top: 0,
               left: 0,
@@ -492,59 +707,73 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      FilledButton.icon(
-                        key: const ValueKey('viewer_close_button'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 10,
+                      Semantics(
+                        button: true,
+                        label: 'Close viewer and return to Direct Messages',
+                        child: FilledButton.icon(
+                          key: const ValueKey('viewer_close_button'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                        ),
-                        onPressed: _closeViewerModeAndReturnToDirect,
-                        icon: const Icon(Icons.close_rounded, size: 22),
-                        label: const Text(
-                          'Close',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
+                          onPressed: _closeViewerModeAndReturnToDirect,
+                          icon: const Icon(Icons.close_rounded, size: 22),
+                          label: const Text(
+                            'Close',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.25),
+                      Semantics(
+                        label: webviewState.isStoryViewer
+                            ? '$todayStoryCount stories viewed today'
+                            : '$todayReelCount reels viewed today',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.play_circle_outline_rounded,
-                              color: Colors.white,
-                              size: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Reels today: $todayReelCount',
-                              style: const TextStyle(
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                webviewState.isStoryViewer
+                                    ? Icons.amp_stories_outlined
+                                    : Icons.play_circle_outline_rounded,
                                 color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                                size: 18,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              Text(
+                                webviewState.isStoryViewer
+                                    ? 'Stories today: $todayStoryCount'
+                                    : 'Reels today: $todayReelCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -553,7 +782,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               ),
             ),
 
-          // Requirement 7: Budget Reached Screen Overlay
+          // Requirement 7: Reel Budget Reached Screen Overlay
           if (webviewState.showBudgetReached)
             Positioned.fill(
               child: Container(
@@ -596,6 +825,65 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       const SizedBox(height: 32),
                       FilledButton.icon(
                         key: const ValueKey('budget_return_button'),
+                        onPressed: _closeViewerModeAndReturnToDirect,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        label: const Text('Return to Messages'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Requirement 3: Story Budget Reached Screen Overlay
+          if (webviewState.showStoryBudgetReached)
+            Positioned.fill(
+              child: Container(
+                color: theme.scaffoldBackgroundColor,
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer.withValues(
+                            alpha: 0.35,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.timer_off_outlined,
+                          size: 64,
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Daily Story Limit Reached',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'You have reached your daily story limit (${featurePrefs.dailyStoryLimit ?? 10}). Close the viewer to return to your direct messages.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      FilledButton.icon(
+                        key: const ValueKey('story_budget_return_button'),
                         onPressed: _closeViewerModeAndReturnToDirect,
                         icon: const Icon(Icons.arrow_back_rounded),
                         label: const Text('Return to Messages'),
@@ -659,10 +947,21 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
     return match?.group(1);
   }
 
+  ({String username, String storyId})? _extractStoryInfo(String path) {
+    final match =
+        RegExp(r'^/stories/(?!create/)([^/]+)/([^/?#]+)').firstMatch(path);
+    if (match != null) {
+      return (username: match.group(1) ?? '', storyId: match.group(2) ?? '');
+    }
+    return null;
+  }
+
   void _retryLoading() {
     ref.read(webviewNotifierProvider.notifier).clearError();
     if (_rawController != null) {
-      _rawController!.reload();
+      _rawController!.loadUrl(
+        urlRequest: URLRequest(url: WebUri(widget.initialUrl)),
+      );
     } else {
       setState(() {});
     }
@@ -670,6 +969,10 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
 
   void _showBlockedToast(String path) {
     if (!mounted) return;
+    final isReel = path.contains('/reel/') || path.contains('/reels/');
+    final message = isReel
+        ? 'Reels are disabled in ZeroScroll.'
+        : 'Blocked by ZeroScroll: $path';
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -679,7 +982,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Blocked by ZeroScroll: $path',
+                message,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13, color: Colors.white),
               ),
@@ -757,6 +1060,13 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
         }
       } catch (_) {}
     }
+  }
+
+  @override
+  void dispose() {
+    _rawController = null;
+    _controllerWrapper = null;
+    super.dispose();
   }
 }
 
@@ -856,6 +1166,72 @@ class _GenericErrorOverlay extends StatelessWidget {
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fail-closed overlay shown if guard JS fails to inject or cannot be verified.
+class _GuardFailedOverlay extends StatelessWidget {
+  const _GuardFailedOverlay({
+    required this.onRetry,
+    this.errorMessage,
+  });
+
+  final VoidCallback onRetry;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      key: const ValueKey('guard_failed_overlay'),
+      color: theme.scaffoldBackgroundColor,
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.shield_rounded,
+                size: 64,
+                color: theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Security Guard Offline',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              errorMessage ??
+                  'ZeroScroll could not verify the page protection guard on this page. '
+                  'To protect your attention and ensure no unshielded feeds are exposed, web access is paused (fail-closed).',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              key: const ValueKey('guard_retry_btn'),
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry Connection'),
             ),
           ],
         ),

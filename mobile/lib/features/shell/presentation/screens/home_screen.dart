@@ -1,31 +1,145 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/config/app_flavor.dart';
-import '../../../limits/presentation/screens/limits_screen.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../limits/domain/limits_status.dart';
+import '../../../limits/presentation/providers/app_lifecycle_tracker.dart';
+import '../../../limits/presentation/providers/limits_state_provider.dart';
+import '../../../limits/presentation/widgets/done_for_today_overlay.dart';
+import '../../../limits/presentation/widgets/focus_locked_overlay.dart';
 import '../../../notifications/presentation/screens/notifications_screen.dart';
+import '../../../onboarding/data/onboarding_repository.dart';
+import '../../../security/presentation/providers/security_provider.dart';
+import '../../../security/presentation/screens/app_lock_screen.dart';
+import '../../../settings/data/feature_preferences_repository.dart';
+import '../../../settings/domain/feature_preferences.dart';
+import '../../../settings/presentation/providers/feature_preferences_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/presentation/screens/settings_screen.dart';
+import '../../../stories/presentation/screens/stories_tray_screen.dart';
+import '../../../updater/presentation/providers/updater_provider.dart';
+import '../../../updater/presentation/screens/blocking_update_screen.dart';
+import '../../../updater/presentation/widgets/update_available_card.dart';
 import '../../../webview/presentation/providers/webview_controller_provider.dart';
 import '../../../webview/presentation/providers/webview_provider.dart';
 import '../../../webview/presentation/widgets/webview_container.dart';
 import '../../domain/shell_tab.dart';
 import '../providers/shell_provider.dart';
+import '../widgets/slim_stats_bar.dart';
 
-/// Main Shell container displaying navigation and persistent tab views.
-class HomeScreen extends ConsumerWidget {
+/// Main Shell container with 3-tab navigation, collapsible top stats bar,
+/// unread badge notification support, persistent IndexedStack, and limits lock enforcement.
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final activeTab = ref.watch(activeShellTabProvider);
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      ref.read(appLifecycleTrackerProvider).init();
+      final completed =
+          await ref.read(onboardingRepositoryProvider).isOnboardingCompleted();
+      if (!completed && mounted) {
+        context.push('/onboarding');
+      } else if (mounted) {
+        // One-time prompt for existing installs to choose features
+        final prefs =
+            await ref.read(featurePreferencesRepositoryProvider).getPreferences();
+        if (!prefs.hasChosenFeatures && mounted) {
+          context.push('/features/choose');
+        }
+        final flavor = ref.read(flavorConfigProvider);
+        if (flavor.canSelfUpdate) {
+          ref.read(updaterProvider.notifier).checkForUpdate();
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final settings = ref.read(settingsNotifierProvider);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      ref.read(securityProvider.notifier).onAppBackgrounded();
+    } else if (state == AppLifecycleState.resumed) {
+      ref.read(securityProvider.notifier).checkTimeoutAndLock(
+            biometricLockEnabled: settings.biometricLockEnabled,
+            lockTimeout: settings.lockTimeout,
+          );
+      ref
+          .read(featurePreferencesProvider.notifier)
+          .checkAndApplyPendingLoosening();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 0. App Lock (local_auth): must be shown before any WebView content is visible
+    final securityStatus = ref.watch(securityProvider);
+    if (securityStatus.isAppLocked) {
+      return const AppLockScreen();
+    }
+
     final flavor = ref.watch(flavorConfigProvider);
+
+    // 0.1 Blocking mandatory update screen (if current build < minSupportedBuild on sideload)
+    if (flavor.canSelfUpdate) {
+      final updaterState = ref.watch(updaterProvider);
+      if (updaterState.isMandatory) {
+        return const BlockingUpdateScreen();
+      }
+    }
+
+    // 1. Check if an active focus schedule or daily limit locks the app
+    final limitsStatus = ref.watch(activeLimitsStatusProvider);
+    if (limitsStatus is FocusLockedStatus) {
+      return FocusLockedOverlay(schedule: limitsStatus.schedule);
+    }
+    if (limitsStatus is DoneForTodayStatus) {
+      return DoneForTodayOverlay(status: limitsStatus);
+    }
+
+    final activeTab = ref.watch(activeShellTabProvider);
+    final unreadCount = ref.watch(unreadMessagesCountProvider);
     final webviewState = ref.watch(webviewNotifierProvider);
+    final featurePrefs = ref.watch(featurePreferencesProvider);
     final theme = Theme.of(context);
 
-    // Hide top AppBar and bottom NavigationBar when viewing a single reel/media
+    final showStoriesTab =
+        featurePrefs.storiesViewMode == StoriesViewMode.fromFollowing;
+    final availableTabs = [
+      ShellTab.messages,
+      ShellTab.notifications,
+      if (showStoriesTab) ShellTab.stories,
+      ShellTab.settings,
+    ];
+
+    final safeTab =
+        availableTabs.contains(activeTab) ? activeTab : ShellTab.messages;
+    final selectedIndex = availableTabs.indexOf(safeTab);
+
+    // Full-screen media isolation: hide bars when viewing a single reel/media or story
     final isViewerActive =
-        activeTab == ShellTab.messages && webviewState.isViewerMode;
+        (safeTab == ShellTab.messages || safeTab == ShellTab.stories) &&
+        webviewState.isViewerMode;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: isViewerActive
           ? null
           : AppBar(
@@ -69,7 +183,7 @@ class HomeScreen extends ConsumerWidget {
                 ],
               ),
               actions: [
-                if (activeTab == ShellTab.messages)
+                if (safeTab == ShellTab.messages)
                   IconButton(
                     icon: const Icon(Icons.refresh_rounded),
                     tooltip: 'Reload Messages',
@@ -79,49 +193,88 @@ class HomeScreen extends ConsumerWidget {
                   ),
               ],
             ),
-      // IndexedStack keeps all views alive in the widget tree across tab switches.
       body: SafeArea(
         top: !isViewerActive,
         bottom: !isViewerActive,
-        child: IndexedStack(
-          index: activeTab.index,
-          children: const [
-            WebviewContainer(),
-            NotificationsScreen(),
-            LimitsScreen(),
-            SettingsScreen(),
+        child: Column(
+          children: [
+            // Top Area: Slim ZeroScroll stats bar (collapsible)
+            if (!isViewerActive) const SlimStatsBar(),
+
+            // Sideload update banner
+            if (flavor.canSelfUpdate && !isViewerActive)
+              const UpdateAvailableCard(),
+
+            // Persistent IndexedStack for the tabs
+            Expanded(
+              child: IndexedStack(
+                index: selectedIndex,
+                children: [
+                  const WebviewContainer(),
+                  const NotificationsScreen(),
+                  if (showStoriesTab) const StoriesTrayScreen(),
+                  const SettingsScreen(),
+                ],
+              ),
+            ),
           ],
         ),
       ),
       bottomNavigationBar: isViewerActive
           ? null
           : NavigationBar(
-              selectedIndex: activeTab.index,
+              selectedIndex: selectedIndex,
               onDestinationSelected: (index) {
                 ref
                     .read(activeShellTabProvider.notifier)
-                    .selectTab(ShellTab.values[index]);
+                    .selectTab(availableTabs[index]);
               },
-              destinations: const [
+              destinations: [
+                // Tab 0: Messages with unread badge (no red badges except unread counts)
                 NavigationDestination(
-                  icon: Icon(Icons.chat_bubble_outline),
-                  selectedIcon: Icon(Icons.chat_bubble),
+                  icon: unreadCount > 0
+                      ? Badge.count(
+                          count: unreadCount,
+                          backgroundColor: AppTheme.unreadBadgeColor,
+                          child: const Icon(Icons.chat_bubble_outline_rounded),
+                        )
+                      : const Icon(Icons.chat_bubble_outline_rounded),
+                  selectedIcon: unreadCount > 0
+                      ? Badge.count(
+                          count: unreadCount,
+                          backgroundColor: AppTheme.unreadBadgeColor,
+                          child: const Icon(Icons.chat_bubble_rounded),
+                        )
+                      : const Icon(Icons.chat_bubble_rounded),
                   label: 'Messages',
+                  tooltip: unreadCount > 0
+                      ? 'Direct Messages ($unreadCount unread)'
+                      : 'Direct Messages',
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.notifications_none),
-                  selectedIcon: Icon(Icons.notifications),
+
+                // Tab 1: Notifications & Activity
+                const NavigationDestination(
+                  icon: Icon(Icons.notifications_none_rounded),
+                  selectedIcon: Icon(Icons.notifications_rounded),
                   label: 'Activity',
+                  tooltip: 'Activity and Notifications',
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.hourglass_empty),
-                  selectedIcon: Icon(Icons.hourglass_full),
-                  label: 'Limits',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  selectedIcon: Icon(Icons.settings),
+
+                // Dynamic 4th tab: Stories (only when fromFollowing mode is enabled)
+                if (showStoriesTab)
+                  const NavigationDestination(
+                    icon: Icon(Icons.amp_stories_outlined),
+                    selectedIcon: Icon(Icons.amp_stories_rounded),
+                    label: 'Stories',
+                    tooltip: 'Stories from Following',
+                  ),
+
+                // Tab: Settings
+                const NavigationDestination(
+                  icon: Icon(Icons.tune_rounded),
+                  selectedIcon: Icon(Icons.tune_rounded),
                   label: 'Settings',
+                  tooltip: 'Settings and Limits',
                 ),
               ],
             ),

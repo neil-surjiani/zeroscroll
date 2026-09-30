@@ -13,3 +13,7 @@
 
 # SQLite rules
 -keep class org.sqlite.** { *; }
+
+# ZeroScroll application rules
+-keep class com.apexventures.zeroscroll.** { *; }
+-keepclassmembers class com.apexventures.zeroscroll.** { *; }

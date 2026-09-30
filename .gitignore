@@ -37,3 +37,10 @@ app.*.map.json
 **/out/
 .env*.local
 website/.env*.local
+
+# Android Signing & Secrets
+key.properties
+**/key.properties
+*.keystore
+*.jks
+
