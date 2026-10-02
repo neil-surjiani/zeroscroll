@@ -322,12 +322,21 @@
 
     var rules = [];
     if (lockScroll) {
-      // Generic lock: stop snap-scrolling to the next reel and block touch panning everywhere.
-      rules.push('html, body { overflow: hidden !important; overscroll-behavior: none !important; }');
-      rules.push('* { scroll-snap-type: none !important; touch-action: none !important; }');
+      // 1. Root lock: viewport cannot scroll or bounce
+      rules.push('html, body { overflow: hidden !important; overscroll-behavior: none !important; overscroll-behavior-y: none !important; touch-action: none !important; width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; background: #000 !important; }');
+      rules.push('* { scroll-snap-type: none !important; overscroll-behavior: none !important; overscroll-behavior-y: none !important; }');
+      // 2. Hide subsequent articles if multiple exist in feed
+      rules.push('article ~ article { display: none !important; visibility: hidden !important; pointer-events: none !important; height: 0 !important; max-height: 0 !important; overflow: hidden !important; }');
+      // 3. Lock real scroll containers
+      rules.push('main, [role="main"] { overflow: hidden !important; overflow-y: hidden !important; scroll-snap-type: none !important; touch-action: none !important; overscroll-behavior: none !important; overscroll-behavior-y: none !important; width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; background: #000 !important; }');
+      // 4. Force reel video and media to expand and fill the available container
+      rules.push('article { width: 100% !important; height: 100% !important; max-width: 100vw !important; max-height: 100vh !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; margin: 0 auto !important; padding: 0 !important; background: #000 !important; }');
+      rules.push('video { width: 100% !important; height: 100% !important; max-width: 100vw !important; max-height: 100vh !important; object-fit: contain !important; margin: 0 auto !important; background: #000 !important; }');
+      // 5. Expand flex parents of video to prevent 50% / quarter width constraint
+      rules.push('article > div, div:has(> video), div:has(> * > video), div:has(> * > * > video) { width: 100% !important; height: 100% !important; max-width: 100vw !important; max-height: 100vh !important; flex: 1 1 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; margin: 0 auto !important; background: #000 !important; }');
     }
     if (viewerScrollSelectors && viewerScrollSelectors.length > 0) {
-      rules.push(viewerScrollSelectors.join(',\n') + ' { overflow: hidden !important; touch-action: none !important; overscroll-behavior: none !important; }');
+      rules.push(viewerScrollSelectors.join(',\n') + ' { overflow: hidden !important; overflow-y: hidden !important; touch-action: none !important; overscroll-behavior: none !important; scroll-snap-type: none !important; }');
     }
     if (viewerHideSelectors && viewerHideSelectors.length > 0) {
       rules.push(viewerHideSelectors.join(',\n') + ' { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }');
@@ -337,14 +346,76 @@
     }
   }
 
-  // Capture phase listener for gestures
-  function onScrollCapture(e) {
+  // --- PROGRAMMATIC SCROLL LOCKING (Monkey-patch prototypes) ---
+  var originalElementScrollTo = Element.prototype.scrollTo;
+  Element.prototype.scrollTo = function(x, y) {
     if (isViewerModeActive && lockScroll) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      return false;
+      if (typeof x === 'number' && x === 0 && (y === 0 || y === undefined)) {
+        return originalElementScrollTo.apply(this, arguments);
+      }
+      if (x && typeof x === 'object' && (!x.top || x.top === 0) && (!x.left || x.left === 0)) {
+        return originalElementScrollTo.apply(this, arguments);
+      }
+      return;
     }
-  }
+    return originalElementScrollTo.apply(this, arguments);
+  };
+
+  var originalElementScrollBy = Element.prototype.scrollBy;
+  Element.prototype.scrollBy = function() {
+    if (isViewerModeActive && lockScroll) {
+      return;
+    }
+    return originalElementScrollBy.apply(this, arguments);
+  };
+
+  var originalScrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function() {
+    if (isViewerModeActive && lockScroll) {
+      return;
+    }
+    return originalScrollIntoView.apply(this, arguments);
+  };
+
+  var originalWindowScrollTo = window.scrollTo;
+  window.scrollTo = function(x, y) {
+    if (isViewerModeActive && lockScroll) {
+      if (typeof x === 'number' && x === 0 && (y === 0 || y === undefined)) {
+        return originalWindowScrollTo.apply(this, arguments);
+      }
+      if (x && typeof x === 'object' && (!x.top || x.top === 0) && (!x.left || x.left === 0)) {
+        return originalWindowScrollTo.apply(this, arguments);
+      }
+      return;
+    }
+    return originalWindowScrollTo.apply(this, arguments);
+  };
+
+  var originalWindowScrollBy = window.scrollBy;
+  window.scrollBy = function() {
+    if (isViewerModeActive && lockScroll) {
+      return;
+    }
+    return originalWindowScrollBy.apply(this, arguments);
+  };
+
+  try {
+    var origScrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+    if (origScrollTopDesc && origScrollTopDesc.set) {
+      Object.defineProperty(Element.prototype, 'scrollTop', {
+        get: function() {
+          return origScrollTopDesc.get.call(this);
+        },
+        set: function(val) {
+          if (isViewerModeActive && lockScroll && val > 0) {
+            return origScrollTopDesc.set.call(this, 0);
+          }
+          return origScrollTopDesc.set.call(this, val);
+        },
+        configurable: true
+      });
+    }
+  } catch (e) {}
 
   var scrollKeyCodes = [
     ' ',
@@ -373,33 +444,60 @@
     }
   }
 
-  // --- VIEWER MODE: LOCK THE REAL SCROLL CONTAINER ---
-  // Instagram's reel player scrolls inside an auto-generated div (not html/body),
-  // so we detect every scrollable element and freeze it.
+  // --- VIEWER MODE: REAL SCROLLER LOCKING & GESTURE SYSTEM ---
   var userGestureActive = false;
   var gestureTimer = null;
+  var _zsTouchStartY = 0;
+  var _zsTouchStartX = 0;
+  var _zsDragToastDebounce = 0;
 
-  function markGesture() {
+  function markGesture(e) {
     userGestureActive = true;
     if (gestureTimer) clearTimeout(gestureTimer);
+    var y = e.clientY != null ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    var x = e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    _zsTouchStartY = y;
+    _zsTouchStartX = x;
   }
+
   function endGestureSoon() {
     if (gestureTimer) clearTimeout(gestureTimer);
-    gestureTimer = setTimeout(function() { userGestureActive = false; }, 700);
+    gestureTimer = setTimeout(function() {
+      userGestureActive = false;
+    }, 400);
+    if (isViewerModeActive && lockScroll) {
+      resetAllScrollers();
+    }
+  }
+
+  function resetAllScrollers() {
+    if (!isViewerModeActive || !lockScroll) return;
+    try {
+      originalWindowScrollTo.call(window, 0, 0);
+    } catch (e) {}
+    var nodes = document.querySelectorAll('div, main, section, article, ul');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.scrollTop !== 0) {
+        el.scrollTop = 0;
+      }
+      if (el.scrollLeft !== 0 && !el.__zs_allow_hscroll) {
+        el.scrollLeft = 0;
+      }
+    }
   }
 
   function lockElement(el) {
     if (!el || el.nodeType !== 1) return;
-    if (!el.__zs_locked) {
-      el.__zs_locked = true;
-      el.__zs_top = el.scrollTop;
-      el.__zs_left = el.scrollLeft;
-    }
+    el.__zs_locked = true;
+    el.scrollTop = 0;
     try {
       el.style.setProperty('overflow', 'hidden', 'important');
+      el.style.setProperty('overflow-y', 'hidden', 'important');
       el.style.setProperty('scroll-snap-type', 'none', 'important');
       el.style.setProperty('touch-action', 'none', 'important');
       el.style.setProperty('overscroll-behavior', 'none', 'important');
+      el.style.setProperty('overscroll-behavior-y', 'none', 'important');
     } catch (e) {}
   }
 
@@ -410,6 +508,9 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (el.__zs_locked) continue;
+      if (el.querySelector && el.querySelector('video') && el.clientHeight >= window.innerHeight * 0.7) {
+        continue;
+      }
       if (el.scrollHeight > el.clientHeight + 4 || el.scrollWidth > el.clientWidth + 4) {
         var cs = window.getComputedStyle(el);
         var oy = cs.overflowY;
@@ -422,19 +523,64 @@
   }
 
   function scheduleScrollerLock() {
-    var delays = [0, 250, 600, 1200, 2500];
+    var delays = [0, 50, 150, 300, 600, 1200, 2500];
     for (var i = 0; i < delays.length; i++) {
-      setTimeout(lockAllScrollers, delays[i]);
+      setTimeout(function() {
+        lockAllScrollers();
+        expandMediaToFillScreen();
+      }, delays[i]);
     }
   }
 
-  // Safety net: if a user gesture still moved a container, snap it back.
+  // Intercept drag gestures (touchmove and pointermove) in the capture phase
+  function onGestureMoveCapture(e) {
+    if (!isViewerModeActive || !lockScroll) return;
+
+    var curY = e.clientY != null ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    var curX = e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    var dy = Math.abs(curY - _zsTouchStartY);
+    var dx = Math.abs(curX - _zsTouchStartX);
+
+    // If vertical motion is detected (swipe / drag between reels)
+    if (dy > 3 || (dy >= dx && dy > 1)) {
+      if (e.cancelable !== false) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // Show debounced toast when intentional swipe attempt is made
+      var now = Date.now();
+      if (dy > 45 && (now - _zsDragToastDebounce > 2500)) {
+        _zsDragToastDebounce = now;
+        notifyNextReelBlocked(null, currentViewerMediaId);
+      }
+
+      resetAllScrollers();
+      return false;
+    }
+  }
+
+  // Intercept wheel and general scroll capture
+  function onScrollCapture(e) {
+    if (isViewerModeActive && lockScroll) {
+      if (e.cancelable !== false) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      resetAllScrollers();
+      return false;
+    }
+  }
+
+  // Safety net: whenever scroll event fires on any element, snap it back to 0
   document.addEventListener('scroll', function(e) {
     if (!isViewerModeActive || !lockScroll) return;
     var t = e.target;
     if (t === document || t === document.documentElement || t === document.body) {
-      if (userGestureActive && (window.scrollY || window.pageYOffset)) {
-        window.scrollTo(0, 0);
+      if (window.scrollY || window.pageYOffset) {
+        originalWindowScrollTo.call(window, 0, 0);
       }
       return;
     }
@@ -442,24 +588,42 @@
     if (!t.__zs_locked) {
       lockElement(t);
     }
-    if (userGestureActive) {
-      if (typeof t.__zs_top === 'number' && t.scrollTop !== t.__zs_top) {
-        t.scrollTop = t.__zs_top;
-      }
-      if (typeof t.__zs_left === 'number' && t.scrollLeft !== t.__zs_left) {
-        t.scrollLeft = t.__zs_left;
-      }
+    if (t.scrollTop !== 0) {
+      t.scrollTop = 0;
+    }
+    if (t.scrollLeft !== 0 && !t.__zs_allow_hscroll) {
+      t.scrollLeft = 0;
     }
   }, true);
 
-  window.addEventListener('touchstart', markGesture, { capture: true, passive: true });
-  window.addEventListener('touchend', endGestureSoon, { capture: true, passive: true });
-  window.addEventListener('touchcancel', endGestureSoon, { capture: true, passive: true });
-  window.addEventListener('wheel', function() { markGesture(); endGestureSoon(); }, { capture: true, passive: true });
+  window.addEventListener('scroll', function() {
+    if (!isViewerModeActive || !lockScroll) return;
+    if (window.scrollY || window.pageYOffset) {
+      originalWindowScrollTo.call(window, 0, 0);
+    }
+  }, true);
 
-  window.addEventListener('touchmove', onScrollCapture, { capture: true, passive: false });
+  // Register capture-phase listeners on both window and document
+  ['touchstart', 'pointerdown'].forEach(function(evt) {
+    window.addEventListener(evt, markGesture, { capture: true, passive: false });
+    document.addEventListener(evt, markGesture, { capture: true, passive: false });
+  });
+
+  ['touchend', 'touchcancel', 'pointerup', 'pointercancel'].forEach(function(evt) {
+    window.addEventListener(evt, endGestureSoon, { capture: true, passive: true });
+    document.addEventListener(evt, endGestureSoon, { capture: true, passive: true });
+  });
+
+  ['touchmove', 'pointermove'].forEach(function(evt) {
+    window.addEventListener(evt, onGestureMoveCapture, { capture: true, passive: false });
+    document.addEventListener(evt, onGestureMoveCapture, { capture: true, passive: false });
+  });
+
   window.addEventListener('wheel', onScrollCapture, { capture: true, passive: false });
+  document.addEventListener('wheel', onScrollCapture, { capture: true, passive: false });
+
   window.addEventListener('keydown', onKeyDownCapture, { capture: true, passive: false });
+  document.addEventListener('keydown', onKeyDownCapture, { capture: true, passive: false });
 
   // --- VIEWER MODE: VIDEO BEHAVIOR & REPLAY BUTTON ---
   function showReplayOverlay(video) {
@@ -507,22 +671,65 @@
       video.removeAttribute('loop');
     }
 
-    video.addEventListener('ended', function() {
+    video.addEventListener('ended', function(e) {
       video.pause();
       showReplayOverlay(video);
-    });
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
 
     video.addEventListener('play', function() {
       hideReplayOverlay();
     });
   }
 
+  function expandMediaToFillScreen() {
+    if (!isViewerModeActive) return;
+    var video = document.querySelector('video');
+    if (!video) return;
+
+    try {
+      video.style.setProperty('width', '100%', 'important');
+      video.style.setProperty('height', '100%', 'important');
+      video.style.setProperty('max-width', '100vw', 'important');
+      video.style.setProperty('max-height', '100vh', 'important');
+      video.style.setProperty('object-fit', 'contain', 'important');
+      video.style.setProperty('margin', '0 auto', 'important');
+
+      var parent = video.parentElement;
+      var depth = 0;
+      while (parent && parent !== document.body && parent !== document.documentElement && depth < 8) {
+        parent.style.setProperty('width', '100%', 'important');
+        parent.style.setProperty('height', '100%', 'important');
+        parent.style.setProperty('max-width', '100vw', 'important');
+        parent.style.setProperty('max-height', '100vh', 'important');
+        parent.style.setProperty('display', 'flex', 'important');
+        parent.style.setProperty('align-items', 'center', 'important');
+        parent.style.setProperty('justify-content', 'center', 'important');
+        parent.style.setProperty('margin', '0 auto', 'important');
+        parent = parent.parentElement;
+        depth++;
+      }
+    } catch (e) {}
+  }
+
   function scanVideos() {
     if (!isViewerModeActive) return;
     var videos = document.querySelectorAll('video');
     for (var i = 0; i < videos.length; i++) {
-      attachVideoControls(videos[i]);
+      if (i === 0) {
+        attachVideoControls(videos[0]);
+      } else {
+        try {
+          videos[i].pause();
+          videos[i].muted = true;
+          videos[i].currentTime = 0;
+          videos[i].removeAttribute('autoplay');
+          videos[i].style.setProperty('display', 'none', 'important');
+        } catch (e) {}
+      }
     }
+    expandMediaToFillScreen();
   }
 
   // --- LOCATION & VIEWER MODE STATE ENGINE ---
@@ -557,14 +764,8 @@
         }
       } else if (blockNextReel && mediaInfo && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
         // Moving to a DIFFERENT reel while in viewer mode
-        if (!isNavigatingBackFromNextReel) {
-          isNavigatingBackFromNextReel = true;
-          notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
-          window.history.back();
-          setTimeout(function() {
-            isNavigatingBackFromNextReel = false;
-          }, 300);
-        }
+        notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+        closeViewerMode();
         return false;
       }
       return true;
@@ -644,6 +845,7 @@
                 }
               } else if (blockNextReel && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
                 notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+                closeViewerMode();
                 return;
               }
             }
@@ -689,6 +891,7 @@
                 }
               } else if (blockNextReel && currentViewerMediaId && mediaInfo.id !== currentViewerMediaId) {
                 notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+                closeViewerMode();
                 return;
               }
             }
@@ -753,6 +956,7 @@
               event.preventDefault();
               event.stopImmediatePropagation();
               notifyNextReelBlocked(mediaInfo.id, currentViewerMediaId);
+              closeViewerMode();
               return;
             }
           }
@@ -932,7 +1136,9 @@
       if (isViewerModeActive) {
         applyScrollLock(true);
         applyViewerCss(true);
+        lockAllScrollers();
         scanVideos();
+        expandMediaToFillScreen();
       }
     }, 200);
   }

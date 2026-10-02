@@ -16,7 +16,6 @@ export default function Home() {
         apkUrl={release.apkUrl}
         appVersion={release.version}
         fileSize={release.fileSize}
-        sha256={release.sha256}
         releasedAt={release.releasedAt}
       />
 

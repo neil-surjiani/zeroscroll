@@ -39,18 +39,27 @@ void main() {
       );
     });
 
-    test('guard.js intercepts wheel, touchmove, and keyboard swipe gestures', () {
+    test('guard.js intercepts wheel, touchmove, pointermove, and keyboard swipe gestures', () {
       expect(guardJs.contains('touchmove'), isTrue);
+      expect(guardJs.contains('pointermove'), isTrue);
+      expect(guardJs.contains('pointerdown'), isTrue);
       expect(guardJs.contains('wheel'), isTrue);
       expect(guardJs.contains('keydown'), isTrue);
       expect(guardJs.contains('preventDefault'), isTrue);
       expect(guardJs.contains('stopImmediatePropagation'), isTrue);
     });
 
-    test('guard.js wraps History pushState and replaceState to catch client-side routing', () {
+    test('guard.js monkey-patches programmatic scrolling and freezes scroll containers', () {
+      expect(guardJs.contains('Element.prototype.scrollTo'), isTrue);
+      expect(guardJs.contains('Element.prototype.scrollBy'), isTrue);
+      expect(guardJs.contains('Element.prototype.scrollIntoView'), isTrue);
+    });
+
+    test('guard.js wraps History pushState and replaceState to catch client-side routing and close viewer', () {
       expect(guardJs.contains('history.pushState'), isTrue);
       expect(guardJs.contains('history.replaceState'), isTrue);
       expect(guardJs.contains('onNavigationBlocked'), isTrue);
+      expect(guardJs.contains('closeViewerMode'), isTrue);
     });
 
     test('reel_mock.html contains distracting elements targeted by hideSelectors', () {

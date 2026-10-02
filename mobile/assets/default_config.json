@@ -65,6 +65,9 @@
       "div:has(> *[aria-label*='More from'])",
       "div[aria-label*='More reels']",
       "div[aria-label*='More posts']",
+      "div[aria-label*='Up next']",
+      "div[aria-label*='Watch more']",
+      "div[aria-label*='Recommended']",
       "header a[role='link']",
       "a[role='link']:has(img[alt*='profile'])",
       "div[aria-label*='More options']",
@@ -74,7 +77,8 @@
       "main",
       "[role='main']",
       "article",
-      "div[data-pressable-container='true']"
+      "#reel-feed",
+      "div[data-testid='reel-feed']"
     ],
     "lockScroll": true,
     "preventScrollKeys": true,
@@ -101,6 +105,9 @@
       "div:has(> *[aria-label*='More from'])",
       "div[aria-label*='More reels']",
       "div[aria-label*='More posts']",
+      "div[aria-label*='Up next']",
+      "div[aria-label*='Watch more']",
+      "div[aria-label*='Recommended']",
       "header a[role='link']",
       "a[role='link']:has(img[alt*='profile'])",
       "div[aria-label*='More options']",
@@ -110,7 +117,8 @@
       "main",
       "[role='main']",
       "article",
-      "div[data-pressable-container='true']"
+      "#reel-feed",
+      "div[data-testid='reel-feed']"
     ],
     "lockScroll": true,
     "preventScrollKeys": true,

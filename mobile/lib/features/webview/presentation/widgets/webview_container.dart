@@ -325,7 +325,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               // Requirement 3: Handler for blocked next-reel transitions
               controller.addJavaScriptHandler(
                 handlerName: 'onNextReelBlocked',
-                callback: (args) {
+                callback: (args) async {
                   final data = args.isNotEmpty && args[0] is Map
                       ? args[0] as Map
                       : null;
@@ -333,6 +333,10 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       data?['message']?.toString() ??
                       config.viewerConfig.lastReelMessage;
                   _showLastReelToast(message);
+                  final blockedId = data?['blockedId']?.toString();
+                  if (blockedId != null && blockedId.isNotEmpty) {
+                    await _closeViewerModeAndReturnToDirect();
+                  }
                 },
               );
 
@@ -642,6 +646,62 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                 resources: request.resources,
                 action: PermissionResponseAction.GRANT,
               );
+            },
+            onUpdateVisitedHistory: (controller, url, isReload) async {
+              final urlString = url?.toString();
+              _controllerWrapper?.updateCachedUrl(urlString);
+              if (widget.isMainInbox) {
+                ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
+              }
+
+              if (url != null && url.host.contains(WebViewConstants.allowedHost)) {
+                final path = url.path;
+
+                // Check viewer mode next reel transition in SPA history
+                if (config.isViewerPath(path)) {
+                  final currentId =
+                      ref.read(webviewNotifierProvider).currentMediaId;
+                  final targetId = _extractMediaId(path);
+                  if (currentId != null &&
+                      targetId != null &&
+                      currentId != targetId) {
+                    _showLastReelToast(config.viewerConfig.lastReelMessage);
+                    await _closeViewerModeAndReturnToDirect();
+                    return;
+                  }
+                }
+
+                // Story viewer single-user check in SPA history
+                final storyInfo = _extractStoryInfo(path);
+                if (storyInfo != null) {
+                  final currentViewerUser =
+                      ref.read(webviewNotifierProvider).currentViewerUsername;
+                  if (currentViewerUser != null &&
+                      storyInfo.username.isNotEmpty &&
+                      currentViewerUser != storyInfo.username) {
+                    _showLastReelToast(
+                      "That was the last story from @$currentViewerUser.",
+                    );
+                    await _closeViewerModeAndReturnToDirect();
+                    return;
+                  }
+                }
+
+                // Disallowed path check
+                if (path != '/' && path.isNotEmpty && !(await _isAuthFlowAllowed(path))) {
+                  if (!config.isPathAllowed(path)) {
+                    ref
+                        .read(debugLogProvider.notifier)
+                        .addBlockedNavigation(path, urlString ?? '');
+                    _showBlockedToast(path);
+                    final fallback = WebUri(
+                      'https://${url.host}${config.fallbackPath}',
+                    );
+                    await controller.loadUrl(urlRequest: URLRequest(url: fallback));
+                    return;
+                  }
+                }
+              }
             },
             shouldOverrideUrlLoading: (controller, navigationAction) async {
               final uri = navigationAction.request.url;

@@ -4,7 +4,6 @@ interface HeroProps {
   apkUrl?: string;
   appVersion?: string;
   fileSize?: string;
-  sha256?: string;
   releasedAt?: string;
 }
 
@@ -12,7 +11,6 @@ export default function Hero({
   apkUrl = process.env.NEXT_PUBLIC_APK_URL || "/zeroscroll.apk",
   appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "v1.0.0",
   fileSize,
-  sha256,
   releasedAt,
 }: HeroProps) {
   return (
@@ -73,17 +71,9 @@ export default function Hero({
 
           {/* Release metadata pill / info */}
           {fileSize && (
-            <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-              <span>{fileSize} APK</span>
-              {sha256 && (
-                <>
-                  <span>•</span>
-                  <span title={`SHA-256 Checksum: ${sha256}`} className="font-mono">
-                    SHA-256: {sha256.substring(0, 8)}…
-                  </span>
-                </>
-              )}
-            </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {fileSize} APK
+            </p>
           )}
 
           {/* Small note on how to allow installs from this source */}
