@@ -438,9 +438,10 @@ class _NotificationTile extends ConsumerWidget {
         controller?.loadInbox();
       }
     } else if (item.type == NotificationType.activity) {
-      // Switch SegmentedButton to Activity Feed WebView
+      // Switch to the Activity Feed WebView (it has its own controller).
+      // Do NOT call loadNotifications() on webViewControllerProvider: that is the
+      // Messages tab's controller and would navigate the DM inbox away.
       ref.read(notificationsViewIndexProvider.notifier).state = 0;
-      ref.read(webViewControllerProvider)?.loadNotifications();
     }
   }
 

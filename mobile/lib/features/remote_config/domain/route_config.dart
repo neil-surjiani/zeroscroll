@@ -246,8 +246,19 @@ class RouteConfig {
   /// 1. If [path] matches any pattern in [alwaysBlockedPaths], it is strictly rejected.
   /// 2. If [path] matches any pattern in [allowedPaths], it is approved.
   /// 3. Default deny: any other path (such as profiles or discovery) is rejected.
+  /// Pages that must always be reachable, whatever an old cached/remote config says.
+  static final List<RegExp> _coreAllowed = [
+    RegExp(r'^/notifications(/|$)'),
+    RegExp(r'^/accounts/activity(/|$)'),
+  ];
+
   bool isPathAllowed(String path) {
     final clean = _normalizePath(path);
+
+    // 0. Core Activity pages are always allowed
+    for (final core in _coreAllowed) {
+      if (core.hasMatch(clean)) return true;
+    }
 
     // 1. Check always blocked paths first
     for (final pattern in alwaysBlockedPaths) {

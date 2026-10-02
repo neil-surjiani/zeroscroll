@@ -3,11 +3,17 @@ import Image from "next/image";
 interface HeroProps {
   apkUrl?: string;
   appVersion?: string;
+  fileSize?: string;
+  sha256?: string;
+  releasedAt?: string;
 }
 
 export default function Hero({
-  apkUrl = process.env.NEXT_PUBLIC_APK_URL || "https://github.com/apexventures/zeroscroll/releases/latest/download/zeroscroll.apk",
+  apkUrl = process.env.NEXT_PUBLIC_APK_URL || "/zeroscroll.apk",
   appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "v1.0.0",
+  fileSize,
+  sha256,
+  releasedAt,
 }: HeroProps) {
   return (
     <section className="relative overflow-hidden pt-12 pb-12 sm:pt-20 sm:pb-16 text-center">
@@ -46,6 +52,7 @@ export default function Hero({
         <div className="mt-8 flex flex-col items-center justify-center gap-3">
           <a
             href={apkUrl}
+            download="zeroscroll.apk"
             className="group inline-flex items-center justify-center gap-3 rounded-2xl bg-teal-700 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-teal-700/20 transition-all hover:bg-teal-800 hover:shadow-teal-700/30 focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 active:scale-95 sm:text-lg dark:bg-teal-600 dark:hover:bg-teal-500 dark:shadow-teal-950/50 dark:focus:ring-teal-500 dark:focus:ring-offset-neutral-950"
             aria-label={`Download ZeroScroll for Android version ${appVersion}`}
           >
@@ -63,6 +70,21 @@ export default function Hero({
               {appVersion}
             </span>
           </a>
+
+          {/* Release metadata pill / info */}
+          {fileSize && (
+            <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+              <span>{fileSize} APK</span>
+              {sha256 && (
+                <>
+                  <span>•</span>
+                  <span title={`SHA-256 Checksum: ${sha256}`} className="font-mono">
+                    SHA-256: {sha256.substring(0, 8)}…
+                  </span>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Small note on how to allow installs from this source */}
           <p className="max-w-md text-xs leading-relaxed text-neutral-500 dark:text-neutral-500">

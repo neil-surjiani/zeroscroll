@@ -46,6 +46,38 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
   @override
   bool get wantKeepAlive => true;
 
+  /// Pages involved in signing in or passing an Instagram checkpoint.
+  static final RegExp _authFlowPattern = RegExp(
+    r'^/(accounts/(login|onetap|password|emailsignup|suspended|two_factor|recovery|access_tool|logout)|login|challenge|two_factor|auth_platform|consent|oauth|privacy|legal)(/|$)',
+  );
+
+  /// Checkpoints can appear even when a session exists (2FA, "confirm it's you").
+  static final RegExp _checkpointPattern = RegExp(
+    r'^/(challenge|two_factor|auth_platform|consent|accounts/(suspended|two_factor))(/|$)',
+  );
+
+  Future<bool> _hasSession() async {
+    try {
+      final cookie = await CookieManager.instance().getCookie(
+        url: WebUri('https://www.${WebViewConstants.allowedHost}/'),
+        name: 'sessionid',
+      );
+      final value = cookie?.value?.toString() ?? '';
+      return value.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True when [path] is part of the login flow and must not be blocked:
+  /// always for checkpoints, and for other auth pages while logged out.
+  Future<bool> _isAuthFlowAllowed(String path) async {
+    final clean = path.isEmpty ? '/' : path;
+    if (!_authFlowPattern.hasMatch(clean)) return false;
+    if (_checkpointPattern.hasMatch(clean)) return true;
+    return !(await _hasSession());
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -81,9 +113,15 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
           ''',
         );
         final currentUrl = await _rawController!.getUrl();
-        if (currentUrl != null && !next.isPathAllowed(currentUrl.path)) {
+        if (currentUrl != null &&
+            currentUrl.host.contains(WebViewConstants.allowedHost) &&
+            !next.isPathAllowed(currentUrl.path) &&
+            !(await _isAuthFlowAllowed(currentUrl.path))) {
+          // fallbackPath is relative ('/direct/inbox/'), so it must be made absolute.
           await _rawController!.loadUrl(
-            urlRequest: URLRequest(url: WebUri(next.fallbackPath)),
+            urlRequest: URLRequest(
+              url: WebUri('https://${currentUrl.host}${next.fallbackPath}'),
+            ),
           );
         }
       }
@@ -163,7 +201,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               allowContentAccess: false,
               safeBrowsingEnabled: true,
               userAgent: userAgent,
-              useHybridComposition: false,
+              useHybridComposition: true,
               cacheEnabled: true,
               transparentBackground: false,
               supportMultipleWindows: false,
@@ -320,7 +358,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                     consoleMessage.messageLevel.toString(),
                   );
             },
-            onLoadStart: (controller, url) {
+            onLoadStart: (controller, url) async {
               final urlString = url?.toString();
               _controllerWrapper?.updateCachedUrl(urlString);
               if (widget.isMainInbox) {
@@ -399,6 +437,11 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   if (path == '/' || path.isEmpty) {
                     return;
                   }
+
+                  // Login / checkpoint pages must never be blocked, otherwise the
+                  // user is bounced back to the login screen mid-sign-in.
+                  if (await _isAuthFlowAllowed(path)) return;
+                  if (!mounted) return;
 
                   // LAYER 1: Check in Dart on load start
                   if (!config.isPathAllowed(path)) {
@@ -685,6 +728,10 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                       return NavigationActionPolicy.CANCEL;
                     }
                   }
+                }
+
+                if (await _isAuthFlowAllowed(path)) {
+                  return NavigationActionPolicy.ALLOW;
                 }
 
                 if (!config.isPathAllowed(path)) {
@@ -1054,35 +1101,9 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
     }
   }
 
-  void _showBlockedToast(String path) {
-    if (!mounted) return;
-    if (path == '/' || path.isEmpty) return;
-    final isReel = path.contains('/reel/') || path.contains('/reels/');
-    final message = isReel
-        ? 'Reels are disabled in ZeroScroll.'
-        : 'Blocked by ZeroScroll: $path';
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.shield_outlined, color: Colors.white, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF22272E),
-      ),
-    );
-  }
+  /// Blocked navigations are handled silently: the page is just redirected to the
+  /// fallback. Details are still recorded in the Debug screen log.
+  void _showBlockedToast(String path) {}
 
   void _showLastReelToast(String message) {
     if (!mounted) return;

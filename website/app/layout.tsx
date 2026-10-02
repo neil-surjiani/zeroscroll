@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
+import { getLatestRelease } from "@/lib/release";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
   ? process.env.NEXT_PUBLIC_SITE_URL
@@ -55,10 +56,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const release = getLatestRelease();
+
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-neutral-50 text-neutral-900 antialiased selection:bg-teal-700 selection:text-white dark:bg-neutral-950 dark:text-neutral-100">
-        <Header />
+        <Header apkUrl={release.apkUrl} appVersion={release.version} />
         <main className="flex-1">{children}</main>
         <Footer />
       </body>

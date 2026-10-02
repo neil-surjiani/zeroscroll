@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 4,
   "minAppVersion": "1.0.0",
   "killSwitch": {
     "enabled": false,
@@ -16,7 +16,14 @@
     "^/consent/",
     "^/legal/",
     "^/api/",
-    "^/privacy/"
+    "^/privacy/",
+    "^/auth_platform/",
+    "^/oauth/",
+    "^/web/",
+    "^/ajax/",
+    "^/graphql/",
+    "^/accounts/login",
+    "^/notifications"
   ],
   "alwaysBlockedPaths": [
     "^/explore",
@@ -119,14 +126,21 @@
         "^/accounts/onetap",
         "^/challenge/",
         "^/two_factor/",
-        "^/accounts/suspended"
+        "^/accounts/suspended",
+        "^/accounts/password",
+        "^/accounts/emailsignup",
+        "^/accounts/two_factor",
+        "^/auth_platform/",
+        "^/oauth/",
+        "^/consent/"
       ],
       "blockedPaths": [],
       "hideSelectors": []
     },
     "activity": {
       "allowedPaths": [
-        "^/accounts/activity"
+        "^/accounts/activity",
+        "^/notifications"
       ],
       "blockedPaths": [],
       "hideSelectors": []

@@ -7,7 +7,7 @@ interface HeaderProps {
 }
 
 export default function Header({
-  apkUrl = process.env.NEXT_PUBLIC_APK_URL || "https://github.com/apexventures/zeroscroll/releases/latest/download/zeroscroll.apk",
+  apkUrl = process.env.NEXT_PUBLIC_APK_URL || "/zeroscroll.apk",
   appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "v1.0.0",
 }: HeaderProps) {
   return (
@@ -36,6 +36,7 @@ export default function Header({
         <div className="flex items-center gap-4">
           <a
             href={apkUrl}
+            download="zeroscroll.apk"
             className="inline-flex items-center gap-1.5 rounded-full bg-teal-700 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 active:scale-95 dark:bg-teal-600 dark:hover:bg-teal-500 dark:focus:ring-teal-500 dark:focus:ring-offset-neutral-950"
             title={`Download ZeroScroll ${appVersion} APK`}
           >

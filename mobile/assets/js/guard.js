@@ -103,6 +103,27 @@
     return false;
   }
 
+  // --- AUTH FLOW EXEMPTION ---
+  // Login, 2FA and checkpoint pages must never be blocked/redirected, otherwise the
+  // user is bounced back to the login screen before sign-in can complete.
+  var authFlowPattern = /^\/(accounts\/(login|onetap|password|emailsignup|suspended|two_factor|recovery|access_tool|logout)|login|challenge|two_factor|auth_platform|consent|oauth|privacy|legal)(\/|$)/;
+  var checkpointPattern = /^\/(challenge|two_factor|auth_platform|consent|accounts\/(suspended|two_factor))(\/|$)/;
+
+  function hasSessionCookie() {
+    // ds_user_id is readable from JS (sessionid is HttpOnly).
+    try {
+      return /(?:^|;\s*)ds_user_id=\d+/.test(document.cookie || '');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isAuthFlowPath(path) {
+    if (!authFlowPattern.test(path)) return false;
+    if (checkpointPattern.test(path)) return true;
+    return !hasSessionCookie();
+  }
+
   function isPathAllowed(pathname) {
     if (!pathname || pathname === 'blank' || pathname === '/blank') {
       if (!window.location.hostname || window.location.protocol === 'about:') {
@@ -110,6 +131,15 @@
       }
     }
     var path = cleanPath(pathname);
+
+    if (isAuthFlowPath(path)) {
+      return true;
+    }
+
+    // Activity / notifications pages are always reachable.
+    if (/^\/(notifications|accounts\/activity)(\/|$)/.test(path)) {
+      return true;
+    }
 
     // 1. Explicitly blocked patterns have top priority
     for (var i = 0; i < blockedPatterns.length; i++) {
@@ -228,9 +258,26 @@
   }
 
   // --- VIEWER MODE: SCROLL LOCKING ---
+  function unlockAllScrollers() {
+    var nodes = document.querySelectorAll('*');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.__zs_locked) {
+        el.__zs_locked = false;
+        el.style.removeProperty('overflow');
+        el.style.removeProperty('scroll-snap-type');
+        el.style.removeProperty('touch-action');
+        el.style.removeProperty('overscroll-behavior');
+      }
+    }
+  }
+
   function applyScrollLock(enable) {
     var html = document.documentElement;
     var body = document.body;
+    if (!enable) {
+      try { unlockAllScrollers(); } catch (e) {}
+    }
     if (enable) {
       if (html) {
         html.style.setProperty('overflow', 'hidden', 'important');
@@ -274,6 +321,11 @@
     }
 
     var rules = [];
+    if (lockScroll) {
+      // Generic lock: stop snap-scrolling to the next reel and block touch panning everywhere.
+      rules.push('html, body { overflow: hidden !important; overscroll-behavior: none !important; }');
+      rules.push('* { scroll-snap-type: none !important; touch-action: none !important; }');
+    }
     if (viewerScrollSelectors && viewerScrollSelectors.length > 0) {
       rules.push(viewerScrollSelectors.join(',\n') + ' { overflow: hidden !important; touch-action: none !important; overscroll-behavior: none !important; }');
     }
@@ -320,6 +372,90 @@
       return false;
     }
   }
+
+  // --- VIEWER MODE: LOCK THE REAL SCROLL CONTAINER ---
+  // Instagram's reel player scrolls inside an auto-generated div (not html/body),
+  // so we detect every scrollable element and freeze it.
+  var userGestureActive = false;
+  var gestureTimer = null;
+
+  function markGesture() {
+    userGestureActive = true;
+    if (gestureTimer) clearTimeout(gestureTimer);
+  }
+  function endGestureSoon() {
+    if (gestureTimer) clearTimeout(gestureTimer);
+    gestureTimer = setTimeout(function() { userGestureActive = false; }, 700);
+  }
+
+  function lockElement(el) {
+    if (!el || el.nodeType !== 1) return;
+    if (!el.__zs_locked) {
+      el.__zs_locked = true;
+      el.__zs_top = el.scrollTop;
+      el.__zs_left = el.scrollLeft;
+    }
+    try {
+      el.style.setProperty('overflow', 'hidden', 'important');
+      el.style.setProperty('scroll-snap-type', 'none', 'important');
+      el.style.setProperty('touch-action', 'none', 'important');
+      el.style.setProperty('overscroll-behavior', 'none', 'important');
+    } catch (e) {}
+  }
+
+  function lockAllScrollers() {
+    if (!isViewerModeActive || !lockScroll) return;
+    applyScrollLock(true);
+    var nodes = document.querySelectorAll('div, main, section, article, ul');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.__zs_locked) continue;
+      if (el.scrollHeight > el.clientHeight + 4 || el.scrollWidth > el.clientWidth + 4) {
+        var cs = window.getComputedStyle(el);
+        var oy = cs.overflowY;
+        var ox = cs.overflowX;
+        if (oy === 'auto' || oy === 'scroll' || oy === 'overlay' || ox === 'auto' || ox === 'scroll') {
+          lockElement(el);
+        }
+      }
+    }
+  }
+
+  function scheduleScrollerLock() {
+    var delays = [0, 250, 600, 1200, 2500];
+    for (var i = 0; i < delays.length; i++) {
+      setTimeout(lockAllScrollers, delays[i]);
+    }
+  }
+
+  // Safety net: if a user gesture still moved a container, snap it back.
+  document.addEventListener('scroll', function(e) {
+    if (!isViewerModeActive || !lockScroll) return;
+    var t = e.target;
+    if (t === document || t === document.documentElement || t === document.body) {
+      if (userGestureActive && (window.scrollY || window.pageYOffset)) {
+        window.scrollTo(0, 0);
+      }
+      return;
+    }
+    if (!t || t.nodeType !== 1) return;
+    if (!t.__zs_locked) {
+      lockElement(t);
+    }
+    if (userGestureActive) {
+      if (typeof t.__zs_top === 'number' && t.scrollTop !== t.__zs_top) {
+        t.scrollTop = t.__zs_top;
+      }
+      if (typeof t.__zs_left === 'number' && t.scrollLeft !== t.__zs_left) {
+        t.scrollLeft = t.__zs_left;
+      }
+    }
+  }, true);
+
+  window.addEventListener('touchstart', markGesture, { capture: true, passive: true });
+  window.addEventListener('touchend', endGestureSoon, { capture: true, passive: true });
+  window.addEventListener('touchcancel', endGestureSoon, { capture: true, passive: true });
+  window.addEventListener('wheel', function() { markGesture(); endGestureSoon(); }, { capture: true, passive: true });
 
   window.addEventListener('touchmove', onScrollCapture, { capture: true, passive: false });
   window.addEventListener('wheel', onScrollCapture, { capture: true, passive: false });
@@ -408,6 +544,7 @@
         applyScrollLock(true);
         applyViewerCss(true);
         scanVideos();
+        scheduleScrollerLock();
         notifyViewerModeChanged(true, mediaInfo);
       } else if (mediaInfo && mediaInfo.type === 'story') {
         if (currentViewerUser && mediaInfo.username !== currentViewerUser) {
@@ -766,9 +903,9 @@
 
   // --- REELS OFF PLACEHOLDER DECORATION ---
   function insertReelPlaceholders() {
-    if (isPathAllowed('/reel/placeholder_check/')) {
-      return;
-    }
+    // Disabled: blocked content is hidden silently, with no visible "blocked" label.
+    return;
+    // eslint-disable-next-line no-unreachable
     try {
       var reelLinks = document.querySelectorAll("a[href*='/reel/']:not([data-zs-placeholder]), a[href*='/reels/']:not([data-zs-placeholder])");
       for (var i = 0; i < reelLinks.length; i++) {
@@ -972,8 +1109,10 @@
             return;
           }
         }
-        window.location.replace(fallbackPath);
-      }, 600);
+        if (hasSessionCookie()) {
+          window.location.replace(fallbackPath);
+        }
+      }, 1500);
     }
   }
 
@@ -989,6 +1128,7 @@
     replaceInstagramLogos();
     if (isViewerModeActive) {
       scanVideos();
+      lockAllScrollers();
     }
   }, 1000);
 })();

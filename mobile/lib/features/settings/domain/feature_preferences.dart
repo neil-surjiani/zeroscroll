@@ -32,7 +32,7 @@ class FeaturePreferences {
     this.storiesPostingEnabled = false,
     this.sharedPostsFromDmsEnabled = true,
     this.dailyStoryLimit = 10,
-    this.messagesOnlyNotifications = true,
+    this.messagesOnlyNotifications = false,
     this.delayLoosening24h = false,
     this.hasChosenFeatures = false,
     this.pendingLooseningJson,
@@ -61,7 +61,7 @@ class FeaturePreferences {
     storiesPostingEnabled: false,
     sharedPostsFromDmsEnabled: true,
     dailyStoryLimit: 10,
-    messagesOnlyNotifications: true,
+    messagesOnlyNotifications: false,
     hasChosenFeatures: true,
   );
 
@@ -74,7 +74,7 @@ class FeaturePreferences {
     storiesPostingEnabled: false,
     sharedPostsFromDmsEnabled: true,
     dailyStoryLimit: 10,
-    messagesOnlyNotifications: true,
+    messagesOnlyNotifications: false,
     hasChosenFeatures: true,
   );
 
@@ -198,7 +198,7 @@ class FeaturePreferences {
           ? json['dailyStoryLimit'] as int?
           : 10,
       messagesOnlyNotifications:
-          json['messagesOnlyNotifications'] as bool? ?? true,
+          json['messagesOnlyNotifications'] as bool? ?? false,
       delayLoosening24h: json['delayLoosening24h'] as bool? ?? false,
       hasChosenFeatures: json['hasChosenFeatures'] as bool? ?? false,
       pendingLooseningJson: json['pendingLooseningJson'] as String?,

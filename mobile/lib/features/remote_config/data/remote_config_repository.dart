@@ -199,6 +199,27 @@ class HttpRouteConfigRepository implements RouteConfigRepository {
         try {
           final decoded = jsonDecode(cachedJson) as Map<String, dynamic>;
           final parsed = RouteConfig.fromJson(decoded);
+
+          // If the app ships a newer bundled config than what is cached, drop the
+          // stale cache so updated allow-lists actually take effect.
+          int? bundledVersion;
+          try {
+            final bundledStr =
+                await _getBundle().loadString('assets/default_config.json');
+            bundledVersion =
+                (jsonDecode(bundledStr) as Map<String, dynamic>)['version']
+                    as int?;
+          } catch (_) {}
+          if (bundledVersion != null && bundledVersion > parsed.version) {
+            await prefs.remove(keyCachedConfigJson);
+            await prefs.remove(keyCachedConfigTimestamp);
+            _log(
+              'Discarded stale cached config v${parsed.version} (bundled v$bundledVersion is newer).',
+              'info',
+            );
+            throw const FormatException('stale cache');
+          }
+
           _activeConfig = parsed;
           _currentSource = ConfigSource.cached;
           _log(

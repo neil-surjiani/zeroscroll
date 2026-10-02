@@ -1,0 +1,13 @@
+{
+  "latestVersion": "1.0.0",
+  "latestBuild": 2,
+  "minSupportedBuild": 1,
+  "apkUrl": "https://zeroscroll.app/zeroscroll.apk",
+  "apkPath": "/zeroscroll.apk",
+  "fileName": "zeroscroll.apk",
+  "fileSizeBytes": 65420052,
+  "fileSizeFormatted": "62.4 MB",
+  "sha256": "b685d299bf6e3265085ecbe52aaa2b1861a9f232655098dc39b6df0b61537799",
+  "changelog": "ZeroScroll v1.0.0 sideload release with pure DM focus, offline security, and stability improvements.",
+  "releasedAt": "2026-10-02T09:02:49.064Z"
+}

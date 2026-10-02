@@ -28,14 +28,18 @@ Built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**, desig
 
 ---
 
-## Environment Variables
+## Environment Variables & Automated Release Assets
 
-The website is configured using the following environment variables:
+The website dynamically reads `public/version.json` and serves the latest release APK directly at `/zeroscroll.apk`.
+
+When running `npm run release` from the repository root, the latest sideload APK, SHA-256 hash, and release manifest are deployed directly into `public/zeroscroll.apk` and `public/version.json`.
+
+Optional environment variables:
 
 | Variable | Description | Default Value / Example |
 | :--- | :--- | :--- |
-| `NEXT_PUBLIC_APK_URL` | Direct download link for the Android `.apk` binary | `https://github.com/apexventures/zeroscroll/releases/latest/download/zeroscroll.apk` |
-| `NEXT_PUBLIC_APP_VERSION` | Version label displayed on download badges | `v1.0.0` |
+| `NEXT_PUBLIC_APK_URL` | Direct download link for the Android `.apk` binary | `/zeroscroll.apk` |
+| `NEXT_PUBLIC_APP_VERSION` | Version label displayed on download badges | Read from `public/version.json` or `v1.0.0` |
 
 Copy the example file to create your local environment:
 ```bash

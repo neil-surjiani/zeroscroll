@@ -6,6 +6,9 @@
     "build": "npm --prefix website run build",
     "dev": "npm --prefix website run dev",
     "start": "npm --prefix website run start",
-    "lint": "npm --prefix website run lint"
+    "lint": "npm --prefix website run lint",
+    "release": "node scripts/release.js",
+    "release:apk": "node scripts/release.js",
+    "deploy:apk": "node scripts/release.js"
   }
 }

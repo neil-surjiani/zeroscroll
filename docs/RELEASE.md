@@ -95,7 +95,65 @@ flutter build appbundle --flavor play -t lib/main_play.dart --release
 
 ---
 
-## 5. Post-Build Verification Checklist
+## 5. Automated Release & Website Deployment (Single Command)
+
+ZeroScroll provides a dedicated, single-command release automation pipeline.
+
+### Command Execution
+From the project root:
+```bash
+npm run release
+```
+or via PowerShell:
+```powershell
+.\scripts\release.ps1
+```
+or via Bash:
+```bash
+./scripts/release.sh
+```
+
+### Decoupling from Standard Development Builds
+> [!IMPORTANT]
+> General development commands such as `flutter build apk` or `flutter run` will **NEVER** trigger release tracking, website updates, or deployment. The release pipeline runs **only** when explicitly invoked via `npm run release` or `./scripts/release.*`.
+
+### What the Release Automation Does:
+1. **Tracks Release Version & Build Number:**
+   - Reads `mobile/pubspec.yaml` and historical releases in `docs/releases.json`.
+   - Auto-increments build number if the version was already released, or accepts explicit bump flags (`--bump patch`, `--bump minor`, `--bump major`, `--version <x.y.z>`).
+2. **Builds Sideload Release APK:**
+   - Executes `flutter build apk --flavor sideload -t lib/main_sideload.dart --release`.
+3. **Cryptographic Checksum & Size:**
+   - Computes lowercase 64-character SHA-256 hash and exact file size.
+4. **Deploys to Website Placeholder:**
+   - Copies APK directly to `website/public/zeroscroll.apk` (served directly at `/zeroscroll.apk`).
+   - Copies backup to `website/public/downloads/zeroscroll.apk` and archived `website/public/releases/zeroscroll-v<version>.apk`.
+   - Generates/updates `website/public/version.json` for both the website UI and the in-app self-updater.
+   - Appends release record to `docs/releases.json`.
+   - Updates `website/.env.local`.
+5. **Verifies Website Build:**
+   - Runs `npm --prefix website run build` to verify website prerendering with the new release assets.
+6. **Optional Vercel Deployment:**
+   - Passing `--deploy` runs `npx vercel --prod` to deploy the updated website and APK directly.
+
+### Advanced Flags:
+```bash
+# Bump patch version (e.g. 1.0.0 -> 1.0.1) and auto-increment build number
+npm run release -- --bump patch
+
+# Set explicit version and release notes
+npm run release -- --version 1.1.0 --notes "Enhanced notification badges and smoother DM transitions"
+
+# Deploy release and publish to Vercel
+npm run release -- --deploy
+
+# Fast packaging / deploy using existing compiled APK without rebuilding Flutter
+npm run release -- --skip-build
+```
+
+---
+
+## 6. Post-Build Verification Checklist
 
 Before publishing any release artifact:
 1. Verify SHA-256 checksum:

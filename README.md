@@ -67,3 +67,27 @@ npm run build
 
 When importing this repository into Vercel, set the **Root Directory** to `website`.
 See [`website/README.md`](website/README.md) for full deployment instructions and environment variables.
+
+---
+
+## 🚀 One-Command Release & Website Deployment (`npm run release`)
+
+To compile the latest sideload release APK, record version/build tracking, compute SHA-256 checksum, and deploy the artifact directly into the website placeholder:
+
+```bash
+# Standard release (reads pubspec.yaml & docs/releases.json)
+npm run release
+
+# Or via PowerShell on Windows:
+.\scripts\release.ps1
+
+# Options:
+npm run release -- --bump patch        # Bump patch version & increment build
+npm run release -- --version 1.1.0     # Explicit version
+npm run release -- --notes "Changelog" # Custom release notes
+npm run release -- --deploy            # Deploy website to Vercel production
+npm run release -- --skip-build        # Fast deploy with existing APK
+```
+
+> **Note on Standard Builds:** General development commands such as `flutter build apk` or `flutter run` will **NEVER** trigger release tracking or website deployment. Only explicitly running `npm run release` (or `.\scripts\release.ps1` / `scripts/release.sh`) triggers the release pipeline.
+
