@@ -9,18 +9,19 @@
   "fallbackPath": "/direct/inbox/",
   "allowedPaths": [
     "^/direct/",
-    "^/accounts/login",
-    "^/accounts/activity",
-    "^/accounts/onetap",
+    "^/accounts/",
+    "^/login",
     "^/challenge/",
     "^/two_factor/",
-    "^/accounts/suspended"
+    "^/consent/",
+    "^/legal/",
+    "^/api/",
+    "^/privacy/"
   ],
   "alwaysBlockedPaths": [
     "^/explore",
     "^/reels/?$",
-    "^/accounts/edit",
-    "^/(?!direct|accounts|challenge|two_factor|reel|reels|p|stories|legal|static)[a-zA-Z0-9._]+/?$"
+    "^/accounts/edit"
   ],
   "hideSelectors": [
     "a[href^='/explore']",
@@ -34,11 +35,10 @@
     "div[role='tablist'] a[href^='/reels']",
     "div:has(> a[href*='play.google.com'])",
     "div:has(> a[href*='apps.apple.com'])",
-    "div[role='banner']",
     "div[data-testid='app-upsell']"
   ],
-  "extraCss": "/* ZeroScroll Core CSS Guard */\na[href^='/explore'], a[href^='/reels'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'], div:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']) { display: none !important; visibility: hidden !important; }",
-  "customCss": "/* ZeroScroll Core CSS Guard */\na[href^='/explore'], a[href^='/reels'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv[role='banner'], div:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']) { display: none !important; visibility: hidden !important; }",
+  "extraCss": "/* ZeroScroll Core CSS Guard */\na[href^='/explore'], a[href^='/reels'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']), div[data-testid='app-upsell'] { display: none !important; visibility: hidden !important; }\nhtml.zeroscroll-home-redirecting body { display: none !important; opacity: 0 !important; visibility: hidden !important; }",
+  "customCss": "/* ZeroScroll Core CSS Guard */\na[href^='/explore'], a[href^='/reels'], a[aria-label='Search'], a[aria-label='Explore'], a[aria-label='Reels'] { display: none !important; visibility: hidden !important; pointer-events: none !important; opacity: 0 !important; }\ndiv:has(> a[href*='play.google.com']), div:has(> a[href*='apps.apple.com']), div[data-testid='app-upsell'] { display: none !important; visibility: hidden !important; }\nhtml.zeroscroll-home-redirecting body { display: none !important; opacity: 0 !important; visibility: hidden !important; }",
   "viewerModeRules": {
     "enabled": true,
     "pathPatterns": [

@@ -148,12 +148,14 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   $guardJs
                 ''',
                 injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-                forMainFrameOnly: false,
+                forMainFrameOnly: true,
               ),
             ]),
             initialSettings: InAppWebViewSettings(
               javaScriptEnabled: true,
               domStorageEnabled: true,
+              databaseEnabled: true,
+              sharedCookiesEnabled: true,
               thirdPartyCookiesEnabled: true,
               mediaPlaybackRequiresUserGesture: true,
               mixedContentMode: MixedContentMode.MIXED_CONTENT_NEVER_ALLOW,
@@ -161,7 +163,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               allowContentAccess: false,
               safeBrowsingEnabled: true,
               userAgent: userAgent,
-              useHybridComposition: true,
+              useHybridComposition: false,
               cacheEnabled: true,
               transparentBackground: false,
               supportMultipleWindows: false,
@@ -171,9 +173,21 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
             onWebViewCreated: (controller) {
               _rawController = controller;
               final wrapper = ZeroScrollWebViewControllerImpl(controller);
+              _controllerWrapper = wrapper;
               if (widget.isMainInbox) {
                 ref.read(webViewControllerProvider.notifier).state = wrapper;
               }
+
+              // JavaScript handler for login success: smoothly loads DMs inbox
+              controller.addJavaScriptHandler(
+                handlerName: 'onLoginSuccess',
+                callback: (args) async {
+                  ref.read(debugLogProvider.notifier).addConsoleLog(
+                    'Instagram login detected. Waiting for natural redirect.',
+                    'info',
+                  );
+                },
+              );
 
               // Register JavaScript bridge for Layer 2 blocked toast notifications
               controller.addJavaScriptHandler(
@@ -309,8 +323,10 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
             onLoadStart: (controller, url) {
               final urlString = url?.toString();
               _controllerWrapper?.updateCachedUrl(urlString);
-              ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
-              ref.read(webviewNotifierProvider.notifier).onLoadStart(urlString);
+              if (widget.isMainInbox) {
+                ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
+                ref.read(webviewNotifierProvider.notifier).onLoadStart(urlString);
+              }
 
               if (url != null) {
                 final host = url.host.toLowerCase();
@@ -379,6 +395,11 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                     }
                   }
 
+                  // Handle root path: do not block or stop loading, let it transition cleanly to inbox
+                  if (path == '/' || path.isEmpty) {
+                    return;
+                  }
+
                   // LAYER 1: Check in Dart on load start
                   if (!config.isPathAllowed(path)) {
                     ref
@@ -395,18 +416,31 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               }
             },
             onProgressChanged: (controller, progress) {
-              ref
-                  .read(webviewNotifierProvider.notifier)
-                  .onProgressChanged(progress);
+              if (widget.isMainInbox) {
+                ref
+                    .read(webviewNotifierProvider.notifier)
+                    .onProgressChanged(progress);
+              }
             },
             onLoadStop: (controller, url) async {
               final urlString = url?.toString();
               _controllerWrapper?.updateCachedUrl(urlString);
-              ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
-              final canGoBack = await controller.canGoBack();
-              ref
-                  .read(webviewNotifierProvider.notifier)
-                  .onLoadStop(urlString, canGoBack: canGoBack);
+              if (widget.isMainInbox) {
+                ref.read(debugLogProvider.notifier).setCurrentUrl(urlString);
+                final canGoBack = await controller.canGoBack();
+                ref
+                    .read(webviewNotifierProvider.notifier)
+                    .onLoadStop(urlString, canGoBack: canGoBack);
+              }
+
+              // If stopped on root path '/', ensure redirect to Direct Messages inbox occurs
+              if (url != null &&
+                  (url.path == '/' || url.path.isEmpty) &&
+                  url.host.contains(WebViewConstants.allowedHost)) {
+                final fallbackUri = WebUri('https://${url.host}${config.fallbackPath}');
+                await controller.loadUrl(urlRequest: URLRequest(url: fallbackUri));
+                return;
+              }
 
               // Check if loaded page is a viewer page directly
               final isStoryPage = _extractStoryInfo(url?.path ?? '') != null;
@@ -464,12 +498,15 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                 (function() {
                   if (typeof checkCurrentLocation === 'function') checkCurrentLocation();
                   if (typeof applyCss === 'function') applyCss();
+                  if (typeof replaceInstagramLogos === 'function') replaceInstagramLogos();
                 })();
               ''',
               );
 
               // Fail-closed verification: ensure the guard script initialized on the loaded page
-              if (url != null && !url.toString().contains('about:blank')) {
+              if (url != null &&
+                  !url.toString().contains('about:blank') &&
+                  url.host.contains(WebViewConstants.allowedHost)) {
                 try {
                   var guardInit = await controller.evaluateJavascript(
                     source:
@@ -503,11 +540,13 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                     await controller.loadUrl(
                       urlRequest: URLRequest(url: WebUri('about:blank')),
                     );
-                    ref
-                        .read(webviewNotifierProvider.notifier)
-                        .onGuardFailure(
-                          'Page protection guard failed to initialize. Web access disabled.',
-                        );
+                    if (widget.isMainInbox) {
+                      ref
+                          .read(webviewNotifierProvider.notifier)
+                          .onGuardFailure(
+                            'Page protection guard failed to initialize. Web access disabled.',
+                          );
+                    }
                     return;
                   }
                 } catch (e) {
@@ -515,16 +554,18 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
                   await controller.loadUrl(
                     urlRequest: URLRequest(url: WebUri('about:blank')),
                   );
-                  ref
-                      .read(webviewNotifierProvider.notifier)
-                      .onGuardFailure('Guard verification error: $e');
+                  if (widget.isMainInbox) {
+                    ref
+                        .read(webviewNotifierProvider.notifier)
+                        .onGuardFailure('Guard verification error: $e');
+                  }
                   return;
                 }
               }
             },
             onReceivedError: (controller, request, error) {
               final isMainFrame = request.isForMainFrame ?? true;
-              if (isMainFrame) {
+              if (isMainFrame && widget.isMainInbox) {
                 ref
                     .read(webviewNotifierProvider.notifier)
                     .onOfflineError(error.description);
@@ -532,7 +573,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
             },
             onReceivedHttpError: (controller, request, errorResponse) {
               final isMainFrame = request.isForMainFrame ?? true;
-              if (isMainFrame) {
+              if (isMainFrame && widget.isMainInbox) {
                 final statusCode = errorResponse.statusCode ?? 500;
                 if (statusCode >= 400) {
                   ref
@@ -542,11 +583,13 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               }
             },
             onReceivedServerTrustAuthRequest: (controller, challenge) async {
-              ref
-                  .read(webviewNotifierProvider.notifier)
-                  .onSslError(
-                    'SSL certificate validation failed for ${challenge.protectionSpace.host}',
-                  );
+              if (widget.isMainInbox) {
+                ref
+                    .read(webviewNotifierProvider.notifier)
+                    .onSslError(
+                      'SSL certificate validation failed for ${challenge.protectionSpace.host}',
+                    );
+              }
               return ServerTrustAuthResponse(
                 action: ServerTrustAuthResponseAction.CANCEL,
               );
@@ -561,7 +604,15 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               final uri = navigationAction.request.url;
               if (uri == null) return NavigationActionPolicy.ALLOW;
 
+              // Allow internal about: and data: schemes without external confirmation
+              if (uri.scheme == 'about' || uri.scheme == 'data') {
+                return NavigationActionPolicy.ALLOW;
+              }
+
               final host = uri.host.toLowerCase();
+              if (host.isEmpty) {
+                return NavigationActionPolicy.ALLOW;
+              }
 
               // LAYER 1: Host check
               if (!config.isHostAllowed(host)) {
@@ -572,6 +623,13 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
               // LAYER 1: Allowed Instagram path check
               if (host.contains(WebViewConstants.allowedHost)) {
                 final path = uri.path;
+
+                // Handle root path navigation (e.g. login redirect or home navigation)
+                if (path == '/' || path.isEmpty) {
+                  // Allow the HTTP redirect to commit Set-Cookie headers in the response.
+                  // guard.js at DOCUMENT_START hides the feed and replaces location with fallbackPath (/direct/inbox/).
+                  return NavigationActionPolicy.ALLOW;
+                }
 
                 // Viewer mode next-reel check
                 if (config.isViewerPath(path)) {
@@ -998,6 +1056,7 @@ class _WebviewContainerState extends ConsumerState<WebviewContainer>
 
   void _showBlockedToast(String path) {
     if (!mounted) return;
+    if (path == '/' || path.isEmpty) return;
     final isReel = path.contains('/reel/') || path.contains('/reels/');
     final message = isReel
         ? 'Reels are disabled in ZeroScroll.'
@@ -1331,10 +1390,11 @@ class _DesktopEnvironmentNotice extends StatelessWidget {
                           color: theme.colorScheme.surface,
                           shape: BoxShape.circle,
                         ),
-                        child: ClipOval(
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
                           child: Image.asset(
-                            'assets/logo.png',
-                            fit: BoxFit.cover,
+                            'assets/logo_icon.png',
+                            fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) => Icon(
                               Icons.phone_android_rounded,
                               size: 28,

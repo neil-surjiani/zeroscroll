@@ -40,6 +40,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
+  final Set<ShellTab> _visitedTabs = {ShellTab.messages};
   @override
   void initState() {
     super.initState();
@@ -135,6 +136,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     final safeTab =
         availableTabs.contains(activeTab) ? activeTab : ShellTab.messages;
+    _visitedTabs.add(safeTab);
     final selectedIndex = availableTabs.indexOf(safeTab);
 
     // Full-screen media isolation: hide bars when viewing a single reel/media or story
@@ -151,25 +153,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               title: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Image.asset(
-                      'assets/logo.png',
+                  Image.asset(
+                    'assets/logo_icon.png',
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
                       width: 28,
                       height: 28,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          size: 16,
-                          color: Colors.white,
-                        ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 16,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -252,9 +251,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 index: selectedIndex,
                 children: [
                   const WebviewContainer(),
-                  const NotificationsScreen(),
-                  if (showStoriesTab) const StoriesTrayScreen(),
-                  const SettingsScreen(),
+                  _visitedTabs.contains(ShellTab.notifications)
+                      ? const NotificationsScreen()
+                      : const SizedBox.shrink(),
+                  if (showStoriesTab)
+                    _visitedTabs.contains(ShellTab.stories)
+                        ? const StoriesTrayScreen()
+                        : const SizedBox.shrink(),
+                  _visitedTabs.contains(ShellTab.settings)
+                      ? const SettingsScreen()
+                      : const SizedBox.shrink(),
                 ],
               ),
             ),

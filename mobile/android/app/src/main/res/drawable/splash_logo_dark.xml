@@ -4,13 +4,23 @@
     android:height="72dp"
     android:viewportWidth="72"
     android:viewportHeight="72">
-    <!-- Circular Shield Outline -->
+    <!-- Speech Bubble Outline & Tail -->
     <path
-        android:strokeColor="#60A5FA"
-        android:strokeWidth="2.5"
-        android:pathData="M 36,8 A 28,28 0 1,1 35.9,8 Z" />
-    <!-- Center Minimalist Z Focus -->
+        android:strokeColor="#2DD4BF"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M 36,12 A 22,22 0 1,0 18,48 L 14,58 L 24,54 A 22,22 0 0,0 36,56 A 22,22 0 0,0 36,12 Z" />
+    <!-- Three Horizontal Lines -->
     <path
-        android:fillColor="#60A5FA"
-        android:pathData="M 24,24 L 48,24 L 28,48 L 48,48 L 48,51 L 22,51 L 42,27 L 24,27 Z" />
+        android:strokeColor="#2DD4BF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M 27,28 L 45,28 M 27,35 L 45,35 M 27,42 L 45,42" />
+    <!-- Diagonal Slash -->
+    <path
+        android:strokeColor="#2DD4BF"
+        android:strokeWidth="3.8"
+        android:strokeLineCap="round"
+        android:pathData="M 25,23 L 47,47" />
 </vector>

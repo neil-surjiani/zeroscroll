@@ -34,11 +34,11 @@ class WelcomeStepView extends StatelessWidget {
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
               child: Image.asset(
-                'assets/logo.png',
-                fit: BoxFit.cover,
+                'assets/logo_icon.png',
+                fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) => Icon(
                   Icons.forum_outlined,
                   size: 44,

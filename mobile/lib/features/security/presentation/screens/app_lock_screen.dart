@@ -80,11 +80,11 @@ class _AppLockScreenState extends ConsumerState<AppLockScreen> {
                         ),
                       ],
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
                       child: Image.asset(
-                        'assets/logo.png',
-                        fit: BoxFit.cover,
+                        'assets/logo_icon.png',
+                        fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) => Icon(
                           Icons.lock_rounded,
                           size: 44,

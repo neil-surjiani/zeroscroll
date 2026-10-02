@@ -89,10 +89,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     color: theme.colorScheme.surface,
                     shape: BoxShape.circle,
                   ),
-                  child: ClipOval(
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
                     child: Image.asset(
-                      'assets/logo.png',
-                      fit: BoxFit.cover,
+                      'assets/logo_icon.png',
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => Icon(
                         Icons.verified_user_rounded,
                         size: 32,
